@@ -71,7 +71,7 @@ jobs:
         
         echo "Running test suite with verbose output..."
         DEBUG=1 ./test.sh
-        local exit_code=$?
+        exit_code=$?
         
         echo "Test suite completed with exit code: $exit_code"
         if [ $exit_code -ne 0 ]; then
