@@ -111,7 +111,7 @@ update_health_status() {
     "git_commit": "$GIT_COMMIT",
     "uptime": "$uptime",
     "memory_usage_mb": $memory_usage,
-    "targets_configured": ${#TARGETS[@]},
+    "targets_configured": ${#TARGETS[@]:-0},
     "last_run": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
     "pid": $$
 }
