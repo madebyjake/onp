@@ -102,20 +102,24 @@ update_health_status() {
     local uptime=$(uptime -p 2>/dev/null || echo "unknown")
     local memory_usage=$(ps -o rss= -p $$ 2>/dev/null | awk '{print int($1/1024)}' || echo "unknown")
     
-    cat > "$HEALTH_FILE" << EOF
-{
-    "status": "$status",
-    "timestamp": "$timestamp",
-    "version": "$VERSION",
-    "build_date": "$BUILD_DATE",
-    "git_commit": "$GIT_COMMIT",
-    "uptime": "$uptime",
-    "memory_usage_mb": $memory_usage,
-    "targets_configured": ${#TARGETS[@]},
-    "last_run": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-    "pid": $$
-}
-EOF
+    # Get targets count safely
+    local targets_count=0
+    if [ -n "${TARGETS:-}" ] && [ ${#TARGETS[@]} -gt 0 ]; then
+        targets_count=${#TARGETS[@]}
+    fi
+    
+    printf '{
+    "status": "%s",
+    "timestamp": "%s",
+    "version": "%s",
+    "build_date": "%s",
+    "git_commit": "%s",
+    "uptime": "%s",
+    "memory_usage_mb": %s,
+    "targets_configured": %d,
+    "last_run": "%s",
+    "pid": %d
+}' "$status" "$timestamp" "$VERSION" "$BUILD_DATE" "$GIT_COMMIT" "$uptime" "$memory_usage" "$targets_count" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" $$ > "$HEALTH_FILE"
 }
 
 # Check if required tools are available
@@ -188,12 +192,66 @@ validate_config() {
             ;;
     esac
     
-    # Validate targets format
+    # Validate targets format with comprehensive checks
     if [ ${#TARGETS[@]} -gt 0 ]; then
         for target in "${TARGETS[@]}"; do
-            if [[ ! "$target" =~ ^(https?://)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(/.*)?$ ]] && [[ ! "$target" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            local is_valid=false
+            
+            # Check for empty or whitespace-only targets
+            if [[ -z "${target// }" ]]; then
+                log "WARN" "Empty target found, skipping"
+                ((warnings++))
+                continue
+            fi
+            
+            # Check for dangerous characters that could lead to command injection
+            if [[ "$target" =~ [\;\|\&\`\$\(\)] ]]; then
+                log "ERROR" "Target '$target' contains dangerous characters"
+                ((errors++))
+                continue
+            fi
+            
+            # Validate URL format
+            if [[ "$target" =~ ^https?:// ]]; then
+                if [[ "$target" =~ ^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(/.*)?$ ]]; then
+                    is_valid=true
+                else
+                    log "WARN" "Target '$target' has invalid URL format"
+                    ((warnings++))
+                fi
+            # Validate hostname format
+            elif [[ "$target" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+                # Additional hostname validation
+                if [[ ! "$target" =~ ^\. ]] && [[ ! "$target" =~ \.$ ]] && [[ ! "$target" =~ \.\. ]]; then
+                    is_valid=true
+                else
+                    log "WARN" "Target '$target' has invalid hostname format"
+                    ((warnings++))
+                fi
+            # Validate IP address format
+            elif [[ "$target" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                # Validate IP address ranges
+                local ip_parts=($(echo "$target" | tr '.' ' '))
+                local valid_ip=true
+                for part in "${ip_parts[@]}"; do
+                    if [ "$part" -gt 255 ] || [ "$part" -lt 0 ]; then
+                        valid_ip=false
+                        break
+                    fi
+                done
+                if [ "$valid_ip" = true ]; then
+                    is_valid=true
+                else
+                    log "WARN" "Target '$target' has invalid IP address format"
+                    ((warnings++))
+                fi
+            else
                 log "WARN" "Target '$target' may not be valid (hostname/IP/URL format expected)"
                 ((warnings++))
+            fi
+            
+            if [ "$is_valid" = true ]; then
+                log "INFO" "Target '$target' validation passed"
             fi
         done
     fi
@@ -205,9 +263,17 @@ validate_config() {
             ((warnings++))
         fi
         
-        if [ -n "${ALERT_WEBHOOK:-}" ] && [[ ! "${ALERT_WEBHOOK}" =~ ^https?:// ]]; then
-            log "WARN" "ALERT_WEBHOOK should be a valid URL: ${ALERT_WEBHOOK}"
-            ((warnings++))
+        if [ -n "${ALERT_WEBHOOK:-}" ]; then
+            # Webhook URL validation
+            if [[ ! "${ALERT_WEBHOOK}" =~ ^https?://[a-zA-Z0-9.-]+(:[0-9]+)?(/.*)?$ ]]; then
+                log "WARN" "ALERT_WEBHOOK should be a valid URL: ${ALERT_WEBHOOK}"
+                ((warnings++))
+            elif [[ "${ALERT_WEBHOOK}" =~ [\;\|\&\`\$\(\)] ]]; then
+                log "ERROR" "ALERT_WEBHOOK contains dangerous characters: ${ALERT_WEBHOOK}"
+                ((errors++))
+            else
+                log "INFO" "ALERT_WEBHOOK validation passed"
+            fi
         fi
     fi
     
@@ -291,14 +357,27 @@ test_ping() {
     
     log "INFO" "Testing ping connectivity to $target"
     
-    if ping -c "$PING_COUNT" -W "$PING_TIMEOUT" "$target" &> /dev/null; then
-        local ping_time=$(ping -c 1 -W "$PING_TIMEOUT" "$target" 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/')
+    # Extract hostname from URL if needed and validate
+    local hostname="$target"
+    if [[ "$target" =~ ^https?:// ]]; then
+        hostname=$(echo "$target" | sed 's|^https\?://||' | cut -d'/' -f1)
+    fi
+    
+    # Validate hostname to prevent command injection
+    if [[ ! "$hostname" =~ ^[a-zA-Z0-9.-]+$ ]] || [[ "$hostname" =~ ^\. ]] || [[ "$hostname" =~ \.$ ]] || [[ "$hostname" =~ \.\. ]]; then
+        echo "  \"ping\": {\"status\": \"failed\", \"error\": \"invalid hostname format\"}" >> "$result_file"
+        log "ERROR" "Invalid hostname format: $hostname"
+        return 1
+    fi
+    
+    if ping -c "$PING_COUNT" -W "$PING_TIMEOUT" "$hostname" &> /dev/null; then
+        local ping_time=$(ping -c 1 -W "$PING_TIMEOUT" "$hostname" 2>/dev/null | grep 'time=' | sed 's/.*time=\([0-9.]*\).*/\1/')
         echo "  \"ping\": {\"status\": \"success\", \"time_ms\": \"$ping_time\"}" >> "$result_file"
-        log "SUCCESS" "Ping to $target successful (${ping_time}ms)"
+        log "SUCCESS" "Ping to $hostname successful (${ping_time}ms)"
         return 0
     else
         echo "  \"ping\": {\"status\": \"failed\", \"error\": \"timeout or unreachable\"}" >> "$result_file"
-        log "ERROR" "Ping to $target failed"
+        log "ERROR" "Ping to $hostname failed"
         return 1
     fi
 }
@@ -317,25 +396,79 @@ test_http() {
     
     local http_code
     local response_time
+    local curl_exit_code
+    local error_message=""
     
-    if response=$(curl -s -w "\n%{http_code}\n%{time_total}" -m "$HTTP_TIMEOUT" -A "$HTTP_USER_AGENT" "$target" 2>/dev/null); then
-        http_code=$(echo "$response" | tail -n 2 | head -n 1)
-        response_time=$(echo "$response" | tail -n 1)
-        
-        if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 400 ]; then
-            echo "  \"http\": {\"status\": \"success\", \"code\": $http_code, \"time_ms\": \"$(echo "$response_time * 1000" | bc -l | cut -d. -f1)\"}" >> "$result_file"
-            log "SUCCESS" "HTTP to $target successful (${http_code}, ${response_time}s)"
-            return 0
+    # Use a temporary file to capture curl output and errors
+    local temp_file="/tmp/curl_output_$$"
+    local error_file="/tmp/curl_error_$$"
+    
+    # Run curl with proper error handling
+    curl -s -w "\n%{http_code}\n%{time_total}\n%{exitcode}" \
+         -m "$HTTP_TIMEOUT" \
+         -A "$HTTP_USER_AGENT" \
+         --connect-timeout 10 \
+         --max-time "$HTTP_TIMEOUT" \
+         "$target" > "$temp_file" 2> "$error_file"
+    
+    curl_exit_code=$?
+    
+    # Check if curl succeeded
+    if [ $curl_exit_code -eq 0 ]; then
+        # Parse response
+        local response_lines=$(wc -l < "$temp_file")
+        if [ "$response_lines" -ge 3 ]; then
+            http_code=$(tail -n 3 "$temp_file" | head -n 1)
+            response_time=$(tail -n 2 "$temp_file" | head -n 1)
+            
+            # Validate HTTP code is numeric
+            if [[ "$http_code" =~ ^[0-9]+$ ]]; then
+                if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 400 ]; then
+                    local time_ms=$(echo "$response_time * 1000" | bc -l 2>/dev/null | cut -d. -f1 || echo "0")
+                    echo "  \"http\": {\"status\": \"success\", \"code\": $http_code, \"time_ms\": \"$time_ms\"}" >> "$result_file"
+                    log "SUCCESS" "HTTP to $target successful (${http_code}, ${response_time}s)"
+                    rm -f "$temp_file" "$error_file"
+                    return 0
+                else
+                    echo "  \"http\": {\"status\": \"failed\", \"code\": $http_code, \"error\": \"HTTP $http_code\"}" >> "$result_file"
+                    log "ERROR" "HTTP to $target failed with code $http_code"
+                    rm -f "$temp_file" "$error_file"
+                    return 1
+                fi
+            else
+                error_message="Invalid HTTP response format"
+            fi
         else
-            echo "  \"http\": {\"status\": \"failed\", \"code\": $http_code, \"error\": \"HTTP $http_code\"}" >> "$result_file"
-            log "ERROR" "HTTP to $target failed with code $http_code"
-            return 1
+            error_message="Incomplete HTTP response"
         fi
     else
-        echo "  \"http\": {\"status\": \"failed\", \"error\": \"connection failed\"}" >> "$result_file"
-        log "ERROR" "HTTP to $target failed"
-        return 1
+        # Handle curl errors
+        case $curl_exit_code in
+            6)  error_message="Couldn't resolve host" ;;
+            7)  error_message="Failed to connect to host" ;;
+            28) error_message="Operation timeout" ;;
+            35) error_message="SSL connect error" ;;
+            52) error_message="Empty reply from server" ;;
+            56) error_message="Failure in receiving network data" ;;
+            *)  error_message="Curl error $curl_exit_code" ;;
+        esac
+        
+        # Try to get more details from error file
+        if [ -s "$error_file" ]; then
+            local curl_error=$(head -n 1 "$error_file" | sed 's/^curl: [0-9]*: //')
+            if [ -n "$curl_error" ]; then
+                error_message="$error_message: $curl_error"
+            fi
+        fi
     fi
+    
+    # Log and record the error
+    echo "  \"http\": {\"status\": \"failed\", \"error\": \"$error_message\"}" >> "$result_file"
+    log "ERROR" "HTTP to $target failed: $error_message"
+    
+    # Clean up temp files
+    rm -f "$temp_file" "$error_file"
+    return 1
 }
 
 # Perform traceroute
@@ -349,6 +482,13 @@ test_traceroute() {
     local hostname="$target"
     if [[ "$target" =~ ^https?:// ]]; then
         hostname=$(echo "$target" | sed 's|^https\?://||' | cut -d'/' -f1)
+    fi
+    
+    # Validate hostname to prevent command injection
+    if [[ ! "$hostname" =~ ^[a-zA-Z0-9.-]+$ ]] || [[ "$hostname" =~ ^\. ]] || [[ "$hostname" =~ \.$ ]] || [[ "$hostname" =~ \.\. ]]; then
+        echo "  \"traceroute\": {\"status\": \"failed\", \"error\": \"invalid hostname format\"}" >> "$result_file"
+        log "ERROR" "Invalid hostname format: $hostname"
+        return 1
     fi
     
     local trace_output
@@ -401,13 +541,40 @@ test_target() {
     # Close JSON
     echo "}" >> "$result_file"
     
-    # Append to main results file
-    if [ -f "$RESULTS_FILE" ]; then
-        echo "," >> "$RESULTS_FILE"
-    else
-        echo "[" > "$RESULTS_FILE"
+    # Append to main results file with file locking to prevent race conditions
+    local lock_file="${RESULTS_FILE}.lock"
+    local timeout=30
+    local count=0
+    
+    # Wait for lock with timeout
+    while [ $count -lt $timeout ]; do
+        if (set -C; echo $$ > "$lock_file") 2>/dev/null; then
+            # Got the lock
+            trap 'rm -f "$lock_file"' EXIT
+            
+            # Append to main results file
+            if [ -f "$RESULTS_FILE" ]; then
+                echo "," >> "$RESULTS_FILE"
+            else
+                echo "[" > "$RESULTS_FILE"
+            fi
+            cat "$result_file" >> "$RESULTS_FILE"
+            
+            # Release lock
+            rm -f "$lock_file"
+            trap - EXIT
+            break
+        else
+            # Lock is held, wait and retry
+            sleep 1
+            count=$((count + 1))
+        fi
+    done
+    
+    # If we couldn't get the lock, log a warning but continue
+    if [ $count -eq $timeout ]; then
+        log "WARN" "Could not acquire lock for results file, skipping this result"
     fi
-    cat "$result_file" >> "$RESULTS_FILE"
     
     # Clean up temp file
     rm -f "$result_file"
@@ -437,9 +604,18 @@ send_alert() {
         
         # Webhook alert (if configured)
         if [ -n "${ALERT_WEBHOOK:-}" ]; then
-            curl -X POST -H "Content-Type: application/json" \
-                 -d "{\"text\":\"$message\"}" \
-                 "$ALERT_WEBHOOK" &> /dev/null || log "WARN" "Failed to send webhook alert"
+            # Properly escape the message for JSON to prevent injection
+            local escaped_message=$(printf '%s\n' "$message" | sed 's/\\/\\\\/g; s/"/\\"/g; s/`/\\`/g; s/\$/\\$/g')
+            
+            # Validate webhook URL format
+            if [[ "$ALERT_WEBHOOK" =~ ^https?://[a-zA-Z0-9.-]+(:[0-9]+)?(/.*)?$ ]]; then
+                curl -X POST -H "Content-Type: application/json" \
+                     -d "{\"text\":\"$escaped_message\"}" \
+                     --max-time 30 \
+                     "$ALERT_WEBHOOK" &> /dev/null || log "WARN" "Failed to send webhook alert"
+            else
+                log "WARN" "Invalid webhook URL format: $ALERT_WEBHOOK"
+            fi
         fi
     fi
 }
@@ -555,9 +731,36 @@ main() {
         track_performance "test_target_$target" "$start_time"
     done
     
-    # Close JSON array
-    if [ -f "$RESULTS_FILE" ]; then
-        echo "]" >> "$RESULTS_FILE"
+    # Close JSON array with file locking
+    local lock_file="${RESULTS_FILE}.lock"
+    local timeout=30
+    local count=0
+    
+    # Wait for lock with timeout
+    while [ $count -lt $timeout ]; do
+        if (set -C; echo $$ > "$lock_file") 2>/dev/null; then
+            # Got the lock
+            trap 'rm -f "$lock_file"' EXIT
+            
+            # Close JSON array
+            if [ -f "$RESULTS_FILE" ]; then
+                echo "]" >> "$RESULTS_FILE"
+            fi
+            
+            # Release lock
+            rm -f "$lock_file"
+            trap - EXIT
+            break
+        else
+            # Lock is held, wait and retry
+            sleep 1
+            count=$((count + 1))
+        fi
+    done
+    
+    # If we couldn't get the lock, log a warning
+    if [ $count -eq $timeout ]; then
+        log "WARN" "Could not acquire lock to close JSON array"
     fi
     
     # Summary
