@@ -165,8 +165,8 @@ main() {
         set -x
     fi
     
-    local tests_passed=0
-    local tests_total=0
+    tests_passed=0
+    tests_total=0
     
     # Test dependencies
     ((tests_total++))
