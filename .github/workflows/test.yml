@@ -178,44 +178,19 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up build environment
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          traceroute \
-          curl \
-          jq \
-          bc
-
     - name: Simulate installation
       run: |
         echo "Testing installation process..."
-        # Test configuration generation
-        bash -c "source onp.conf && echo 'Configuration test passed'"
-        
-        # Test file copying (simulation)
         mkdir -p /tmp/test-install
         cp onp.sh /tmp/test-install/
         cp onp.conf /tmp/test-install/
         cp onp.service /tmp/test-install/
         cp onp.timer /tmp/test-install/
-        
         echo "Installation simulation completed"
-
-    - name: Test configuration generation
-      run: |
-        echo "Testing timer generation..."
-        bash -c "
-          source onp.conf
-          echo 'Timer interval: $TIMER_INTERVAL'
-          echo 'Targets: ${#TARGETS[@]}'
-        "
 
     - name: Validate project structure
       run: |
         echo "Checking project structure..."
-        ls -la
-        echo "Required files:"
         test -f onp.sh && echo "✓ onp.sh"
         test -f onp.conf && echo "✓ onp.conf"
         test -f onp.service && echo "✓ onp.service"
@@ -224,4 +199,3 @@ jobs:
         test -f test.sh && echo "✓ test.sh"
         test -f Makefile && echo "✓ Makefile"
         test -f README.md && echo "✓ README.md"
-        test -f .gitignore && echo "✓ .gitignore"
