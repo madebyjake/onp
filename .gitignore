@@ -1,0 +1,57 @@
+# OpenNetProbe .gitignore
+
+# Log files
+logs/
+*.log
+
+# Results and data files
+results/
+*.json
+traceroute-*.txt
+
+# Temporary files
+/tmp/opennetprobe_*
+*.tmp
+*.temp
+
+# Systemd service files (generated during installation)
+/etc/systemd/system/opennetprobe.service
+/etc/systemd/system/opennetprobe.timer
+
+# Installation directory (created during install)
+/opt/opennetprobe/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Test output
+test-output/
+*.test.log
+
+# Local configuration overrides
+opennetprobe.conf.local
+config.local
+
+# Package files
+*.tar.gz
+*.zip
+*.deb
+*.rpm
