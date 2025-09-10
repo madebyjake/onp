@@ -19,10 +19,10 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/onp/logs /opt/onp/results /tmp
+ReadWritePaths=/opt/onp /tmp
 
 # Resource limits
-MemoryLimit=256M
+MemoryMax=256M
 CPUQuota=50%
 
 # Restart settings
