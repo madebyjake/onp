@@ -102,20 +102,18 @@ update_health_status() {
     local uptime=$(uptime -p 2>/dev/null || echo "unknown")
     local memory_usage=$(ps -o rss= -p $$ 2>/dev/null | awk '{print int($1/1024)}' || echo "unknown")
     
-    cat > "$HEALTH_FILE" << EOF
-{
-    "status": "$status",
-    "timestamp": "$timestamp",
-    "version": "$VERSION",
-    "build_date": "$BUILD_DATE",
-    "git_commit": "$GIT_COMMIT",
-    "uptime": "$uptime",
-    "memory_usage_mb": $memory_usage,
-    "targets_configured": ${#TARGETS[@]:-0},
-    "last_run": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-    "pid": $$
-}
-EOF
+    printf '{
+    "status": "%s",
+    "timestamp": "%s",
+    "version": "%s",
+    "build_date": "%s",
+    "git_commit": "%s",
+    "uptime": "%s",
+    "memory_usage_mb": %s,
+    "targets_configured": %d,
+    "last_run": "%s",
+    "pid": %d
+}' "$status" "$timestamp" "$VERSION" "$BUILD_DATE" "$GIT_COMMIT" "$uptime" "$memory_usage" "${#TARGETS[@]:-0}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" $$ > "$HEALTH_FILE"
 }
 
 # Check if required tools are available
