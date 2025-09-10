@@ -169,10 +169,10 @@ main() {
     tests_total=0
     
     # Test dependencies
-    ((tests_total++))
+    tests_total=$((tests_total + 1))
     log "INFO" "Starting dependency test..."
     if test_dependencies; then
-        ((tests_passed++))
+        tests_passed=$((tests_passed + 1))
         log "SUCCESS" "Dependency test passed"
     else
         log "ERROR" "Dependency test failed"
@@ -180,10 +180,10 @@ main() {
     echo
     
     # Test script syntax
-    ((tests_total++))
+    tests_total=$((tests_total + 1))
     log "INFO" "Starting syntax test..."
     if test_syntax; then
-        ((tests_passed++))
+        tests_passed=$((tests_passed + 1))
         log "SUCCESS" "Syntax test passed"
     else
         log "ERROR" "Syntax test failed"
@@ -191,10 +191,10 @@ main() {
     echo
     
     # Test configuration
-    ((tests_total++))
+    tests_total=$((tests_total + 1))
     log "INFO" "Starting configuration test..."
     if test_config; then
-        ((tests_passed++))
+        tests_passed=$((tests_passed + 1))
         log "SUCCESS" "Configuration test passed"
     else
         log "ERROR" "Configuration test failed"
@@ -202,10 +202,10 @@ main() {
     echo
     
     # Test systemd files
-    ((tests_total++))
+    tests_total=$((tests_total + 1))
     log "INFO" "Starting systemd test..."
     if test_systemd; then
-        ((tests_passed++))
+        tests_passed=$((tests_passed + 1))
         log "SUCCESS" "Systemd test passed"
     else
         log "ERROR" "Systemd test failed"
@@ -215,20 +215,20 @@ main() {
     # Test network connectivity
     log "INFO" "Starting network connectivity tests..."
     for target in "${TEST_TARGETS[@]}"; do
-        ((tests_total++))
+        tests_total=$((tests_total + 1))
         log "INFO" "Testing ping connectivity to $target..."
         if test_ping "$target"; then
-            ((tests_passed++))
+            tests_passed=$((tests_passed + 1))
             log "SUCCESS" "Ping test to $target passed"
         else
             log "WARN" "Ping test to $target failed (may be expected in CI)"
         fi
         echo
         
-        ((tests_total++))
+        tests_total=$((tests_total + 1))
         log "INFO" "Testing HTTP connectivity to $target..."
         if test_http "$target"; then
-            ((tests_passed++))
+            tests_passed=$((tests_passed + 1))
             log "SUCCESS" "HTTP test to $target passed"
         else
             log "WARN" "HTTP test to $target failed (may be expected in CI)"
