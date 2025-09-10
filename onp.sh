@@ -102,6 +102,12 @@ update_health_status() {
     local uptime=$(uptime -p 2>/dev/null || echo "unknown")
     local memory_usage=$(ps -o rss= -p $$ 2>/dev/null | awk '{print int($1/1024)}' || echo "unknown")
     
+    # Get targets count safely
+    local targets_count=0
+    if [ -n "${TARGETS:-}" ] && [ ${#TARGETS[@]} -gt 0 ]; then
+        targets_count=${#TARGETS[@]}
+    fi
+    
     printf '{
     "status": "%s",
     "timestamp": "%s",
@@ -113,7 +119,7 @@ update_health_status() {
     "targets_configured": %d,
     "last_run": "%s",
     "pid": %d
-}' "$status" "$timestamp" "$VERSION" "$BUILD_DATE" "$GIT_COMMIT" "$uptime" "$memory_usage" "${#TARGETS[@]:-0}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" $$ > "$HEALTH_FILE"
+}' "$status" "$timestamp" "$VERSION" "$BUILD_DATE" "$GIT_COMMIT" "$uptime" "$memory_usage" "$targets_count" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" $$ > "$HEALTH_FILE"
 }
 
 # Check if required tools are available
