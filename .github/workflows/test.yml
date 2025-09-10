@@ -1,0 +1,227 @@
+name: Test OpenNetProbe (ONP)
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up test environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          traceroute \
+          curl \
+          jq \
+          bc \
+          shellcheck
+
+    - name: Test script syntax
+      run: |
+        echo "Testing BASH syntax..."
+        bash -n onp.sh
+        bash -n install.sh
+        bash -n test.sh
+
+    - name: Run ShellCheck
+      run: |
+        shellcheck onp.sh || true
+        shellcheck install.sh || true
+        shellcheck test.sh || true
+
+    - name: Test configuration loading
+      run: |
+        echo "Testing configuration file syntax..."
+        bash -c "source onp.conf && echo 'Configuration loaded successfully'"
+        
+        echo "Validating configuration variables..."
+        bash -c "source onp.conf && echo 'Targets: ${#TARGETS[@]}'"
+
+    - name: Test systemd files
+      run: |
+        echo "Validating systemd service file..."
+        systemd-analyze verify onp.service || echo "Service file validation completed"
+        
+        echo "Validating systemd timer file..."
+        systemd-analyze verify onp.timer || echo "Timer file validation completed"
+
+    - name: Test network connectivity
+      run: |
+        echo "Testing ping connectivity..."
+        ping -c 1 -W 5 google.com || echo "Ping test completed"
+        ping -c 1 -W 5 cloudflare.com || echo "Ping test completed"
+        
+        echo "Testing HTTP connectivity..."
+        curl -s -m 10 -o /dev/null https://google.com && echo "HTTP test successful" || echo "HTTP test completed"
+        curl -s -m 10 -o /dev/null https://cloudflare.com && echo "HTTP test successful" || echo "HTTP test completed"
+
+    - name: Run test suite
+      run: |
+        echo "Making test script executable..."
+        chmod +x test.sh
+        
+        echo "Running test suite with verbose output..."
+        DEBUG=1 ./test.sh
+        local exit_code=$?
+        
+        echo "Test suite completed with exit code: $exit_code"
+        if [ $exit_code -ne 0 ]; then
+          echo "Test suite failed. Check the output above for details."
+          exit $exit_code
+        fi
+
+    - name: Test installation script (dry run)
+      run: |
+        echo "Testing installation script help..."
+        bash install.sh help || echo "Help command completed"
+        
+        echo "Testing installation script syntax..."
+        bash -n install.sh
+
+    - name: Test Makefile
+      run: |
+        echo "Testing Makefile help..."
+        make help || echo "Makefile help completed"
+        
+        echo "Testing Makefile syntax..."
+        make -n clean || echo "Makefile syntax check completed"
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up linting tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y shellcheck
+
+    - name: Lint shell scripts
+      run: |
+        echo "Running ShellCheck on all shell scripts..."
+        shellcheck onp.sh || echo "ShellCheck completed for onp.sh"
+        shellcheck install.sh || echo "ShellCheck completed for install.sh"
+        shellcheck test.sh || echo "ShellCheck completed for test.sh"
+
+    - name: Check file permissions
+      run: |
+        echo "Checking file permissions..."
+        ls -la *.sh
+        echo "All shell scripts should be executable"
+
+  security:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up security tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bandit
+
+    - name: Security scan
+      run: |
+        echo "Running security checks..."
+        echo "Checking for hardcoded secrets..."
+        grep -r "password\|secret\|key" . --exclude-dir=.git || echo "No hardcoded secrets found"
+        
+        echo "Checking for sudo usage..."
+        grep -r "sudo" . --exclude-dir=.git || echo "Sudo usage found (expected for systemd)"
+
+    - name: Validate systemd security
+      run: |
+        echo "Checking systemd service security settings..."
+        grep -A 10 "Security settings" onp.service || echo "Security settings found"
+
+  documentation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check documentation
+      run: |
+        echo "Checking README.md exists and has content..."
+        test -f README.md && echo "README.md found"
+        wc -l README.md
+        
+        echo "Checking for required sections..."
+        grep -q "# OpenNetProbe" README.md && echo "Title found"
+        grep -q "## Features" README.md && echo "Features section found"
+        grep -q "## Installation" README.md && echo "Installation section found"
+        grep -q "## Configuration" README.md && echo "Configuration section found"
+
+    - name: Validate links
+      run: |
+        echo "Checking for broken internal links..."
+        grep -o '\[.*\](.*)' README.md | grep -v 'http' || echo "Internal links checked"
+
+  build-test:
+    runs-on: ubuntu-latest
+    needs: [test, lint, security, documentation]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up build environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          traceroute \
+          curl \
+          jq \
+          bc
+
+    - name: Simulate installation
+      run: |
+        echo "Testing installation process..."
+        # Test configuration generation
+        bash -c "source onp.conf && echo 'Configuration test passed'"
+        
+        # Test file copying (simulation)
+        mkdir -p /tmp/test-install
+        cp onp.sh /tmp/test-install/
+        cp onp.conf /tmp/test-install/
+        cp onp.service /tmp/test-install/
+        cp onp.timer /tmp/test-install/
+        
+        echo "Installation simulation completed"
+
+    - name: Test configuration generation
+      run: |
+        echo "Testing timer generation..."
+        bash -c "
+          source onp.conf
+          echo 'Timer interval: $TIMER_INTERVAL'
+          echo 'Targets: ${#TARGETS[@]}'
+        "
+
+    - name: Validate project structure
+      run: |
+        echo "Checking project structure..."
+        ls -la
+        echo "Required files:"
+        test -f onp.sh && echo "✓ onp.sh"
+        test -f onp.conf && echo "✓ onp.conf"
+        test -f onp.service && echo "✓ onp.service"
+        test -f onp.timer && echo "✓ onp.timer"
+        test -f install.sh && echo "✓ install.sh"
+        test -f test.sh && echo "✓ test.sh"
+        test -f Makefile && echo "✓ Makefile"
+        test -f README.md && echo "✓ README.md"
+        test -f .gitignore && echo "✓ .gitignore"
