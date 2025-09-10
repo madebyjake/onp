@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenNetProbe (ONP) Timer
+Documentation=https://github.com/madebyjake/onp
+Requires=onp.service
+
+[Timer]
+# Run based on configured interval
+OnCalendar=hourly
+# Add some randomization to avoid all systems hitting at the same time
+RandomizedDelaySec=300
+# Timer persists across reboots
+Persistent=true
+# Accuracy settings
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

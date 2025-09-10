@@ -1,0 +1,35 @@
+[Unit]
+Description=OpenNetProbe (ONP) Service
+Documentation=https://github.com/madebyjake/onp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/onp
+ExecStart=/opt/onp/onp.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netprobe
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/onp/logs /opt/onp/results /tmp
+
+# Resource limits
+MemoryLimit=256M
+CPUQuota=50%
+
+# Restart settings
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
