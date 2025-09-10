@@ -1,4 +1,4 @@
-name: Test OpenNetProbe (ONP)
+name: Test ONP
 
 on:
   push:
