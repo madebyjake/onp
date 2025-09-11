@@ -79,11 +79,27 @@ test_syntax() {
     
     if bash -n ./netnoise.sh; then
         log "SUCCESS" "Script syntax is valid"
-        return 0
     else
         log "ERROR" "Script syntax errors found"
         return 1
     fi
+    
+    # Test module syntax
+    if [ -d "./modules" ]; then
+        log "INFO" "Testing module syntax..."
+        for module in modules/*.sh; do
+            if [ -f "$module" ]; then
+                if bash -n "$module"; then
+                    log "SUCCESS" "Module $(basename "$module") syntax is valid"
+                else
+                    log "ERROR" "Module $(basename "$module") syntax errors found"
+                    return 1
+                fi
+            fi
+        done
+    fi
+    
+    return 0
 }
 
 # Test configuration loading
@@ -262,14 +278,14 @@ test_mtu() {
             ping_cmd="$ping_cmd -M do"
         fi
         
-        if timeout 3 $ping_cmd "$hostname" &>/dev/null; then
+        if timeout 3 "$ping_cmd" "$hostname" &>/dev/null; then
             found_mtu=$mtu
             log "SUCCESS" "MTU $mtu bytes successful on $hostname"
             break
         fi
     done
     
-    if [ $found_mtu -gt 0 ]; then
+    if [ "$found_mtu" -gt 0 ]; then
         log "SUCCESS" "MTU test to $target successful (found MTU: $found_mtu bytes)"
         return 0
     else

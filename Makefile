@@ -1,7 +1,7 @@
 # netnoise Makefile
 # Provides commands for managing netnoise
 
-.PHONY: help install uninstall test clean status start stop restart logs regenerate check health version
+.PHONY: help install uninstall upgrade test clean status start stop restart logs regenerate check health version config manual info lint format validate deps setup dev
 
 # Default target
 help:
@@ -11,6 +11,7 @@ help:
 	@echo "Available targets:"
 	@echo "  install     - Install netnoise systemd service"
 	@echo "  uninstall   - Remove netnoise completely"
+	@echo "  upgrade     - Upgrade netnoise to latest version"
 	@echo "  test        - Run test suite"
 	@echo "  clean       - Clean up logs and results"
 	@echo "  status      - Show service status"
@@ -24,6 +25,13 @@ help:
 	@echo "  config      - Edit configuration"
 	@echo "  manual      - Run manual test"
 	@echo "  version     - Show version information"
+	@echo "  info        - Show installation information"
+	@echo "  lint        - Run ShellCheck on all scripts"
+	@echo "  format      - Format and validate scripts"
+	@echo "  validate    - Validate all configuration files"
+	@echo "  deps        - Check and install dependencies"
+	@echo "  setup       - Setup development environment"
+	@echo "  dev         - Run development mode (local testing)"
 	@echo ""
 
 # Install netnoise
@@ -35,6 +43,25 @@ install:
 uninstall:
 	@echo "Uninstalling netnoise..."
 	sudo ./install.sh uninstall
+
+# Upgrade netnoise
+upgrade:
+	@echo "Upgrading netnoise..."
+	@echo "Stopping netnoise services..."
+	@sudo systemctl stop netnoise.timer 2>/dev/null || true
+	@sudo systemctl stop netnoise.service 2>/dev/null || true
+	@echo "Backing up current configuration..."
+	@sudo cp /opt/netnoise/netnoise.conf /opt/netnoise/netnoise.conf.backup 2>/dev/null || true
+	@echo "Pulling latest changes..."
+	@git pull origin main
+	@echo "Reinstalling netnoise..."
+	@sudo ./install.sh
+	@echo "Restoring configuration..."
+	@sudo cp /opt/netnoise/netnoise.conf.backup /opt/netnoise/netnoise.conf 2>/dev/null || true
+	@echo "Starting netnoise services..."
+	@sudo systemctl start netnoise.timer
+	@echo "Upgrade completed successfully!"
+	@echo "Run 'make status' to verify everything is working."
 
 # Run test suite
 test:
@@ -129,6 +156,7 @@ manual:
 	@echo "Running manual netnoise test..."
 	sudo /opt/netnoise/netnoise.sh
 
+
 # Show installation info
 info:
 	@echo "NetNoise Installation Information"
@@ -146,3 +174,132 @@ info:
 	@echo "  View logs:     journalctl -u netnoise.service -f"
 	@echo "  Check status:  systemctl status netnoise.timer"
 	@echo "  Manual run:    sudo /opt/netnoise/netnoise.sh"
+
+# Run ShellCheck on all scripts
+lint:
+	@echo "Running ShellCheck on all scripts..."
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		echo "Checking main scripts..."; \
+		shellcheck netnoise.sh install.sh test.sh || true; \
+		echo "Checking modules..."; \
+		for module in modules/*.sh; do \
+			if [ -f "$$module" ]; then \
+				echo "Checking $$module..."; \
+				shellcheck "$$module" || true; \
+			fi; \
+		done; \
+		echo "ShellCheck completed"; \
+	else \
+		echo "ShellCheck not found. Install with: sudo apt-get install shellcheck"; \
+		echo "Or: brew install shellcheck"; \
+	fi
+
+# Format and validate scripts
+format:
+	@echo "Formatting and validating scripts..."
+	@echo "Checking script syntax..."
+	@bash -n netnoise.sh && echo "✓ netnoise.sh syntax OK" || echo "✗ netnoise.sh syntax error"
+	@bash -n install.sh && echo "✓ install.sh syntax OK" || echo "✗ install.sh syntax error"
+	@bash -n test.sh && echo "✓ test.sh syntax OK" || echo "✗ test.sh syntax error"
+	@echo "Checking module syntax..."
+	@for module in modules/*.sh; do \
+		if [ -f "$$module" ]; then \
+			if bash -n "$$module"; then \
+				echo "✓ $$module syntax OK"; \
+			else \
+				echo "✗ $$module syntax error"; \
+			fi; \
+		fi; \
+	done
+	@echo "Format validation completed"
+
+# Validate all configuration files
+validate:
+	@echo "Validating configuration files..."
+	@echo "Checking netnoise.conf..."
+	@if [ -f "netnoise.conf" ]; then \
+		if bash -c "source netnoise.conf && echo 'Configuration loaded successfully'"; then \
+			echo "✓ netnoise.conf is valid"; \
+		else \
+			echo "✗ netnoise.conf has errors"; \
+		fi; \
+	else \
+		echo "✗ netnoise.conf not found"; \
+	fi
+	@echo "Checking systemd files..."
+	@if [ -f "netnoise.service" ]; then \
+		if systemd-analyze verify netnoise.service >/dev/null 2>&1; then \
+			echo "✓ netnoise.service is valid"; \
+		else \
+			echo "✗ netnoise.service has issues (may need systemd context)"; \
+		fi; \
+	else \
+		echo "✗ netnoise.service not found"; \
+	fi
+	@if [ -f "netnoise.timer" ]; then \
+		if systemd-analyze verify netnoise.timer >/dev/null 2>&1; then \
+			echo "✓ netnoise.timer is valid"; \
+		else \
+			echo "✗ netnoise.timer has issues (may need systemd context)"; \
+		fi; \
+	else \
+		echo "✗ netnoise.timer not found"; \
+	fi
+	@echo "Configuration validation completed"
+
+# Check and install dependencies
+deps:
+	@echo "Checking dependencies..."
+	@echo "Required tools:"
+	@for tool in ping traceroute curl jq bc; do \
+		if command -v "$$tool" >/dev/null 2>&1; then \
+			echo "✓ $$tool is installed"; \
+		else \
+			echo "✗ $$tool is missing"; \
+		fi; \
+	done
+	@echo "DNS tools:"
+	@if command -v dig >/dev/null 2>&1; then \
+		echo "✓ dig is installed"; \
+	else \
+		echo "✗ dig is missing"; \
+	fi
+	@if command -v nslookup >/dev/null 2>&1; then \
+		echo "✓ nslookup is installed"; \
+	else \
+		echo "✗ nslookup is missing"; \
+	fi
+	@echo "Optional tools:"
+	@for tool in shellcheck nc wget; do \
+		if command -v "$$tool" >/dev/null 2>&1; then \
+			echo "✓ $$tool is installed"; \
+		else \
+			echo "? $$tool is not installed (optional)"; \
+		fi; \
+	done
+	@echo "Dependency check completed"
+
+# Setup development environment
+setup:
+	@echo "Setting up development environment..."
+	@echo "Creating necessary directories..."
+	@mkdir -p logs results packet_loss
+	@echo "Setting up permissions..."
+	@chmod +x netnoise.sh install.sh test.sh
+	@chmod +x modules/*.sh 2>/dev/null || true
+	@echo "Running initial validation..."
+	@make format
+	@make validate
+	@echo "Development environment setup completed"
+
+# Run development mode (local testing)
+dev:
+	@echo "Running netnoise in development mode..."
+	@echo "This will run locally without systemd..."
+	@echo "======================================="
+	@./netnoise.sh --check
+	@echo ""
+	@echo "Running full test suite..."
+	@make test
+	@echo ""
+	@echo "Development mode completed"
