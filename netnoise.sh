@@ -132,6 +132,16 @@ check_dependencies() {
         fi
     done
     
+    # Check for at least one DNS tool
+    local dns_tools_available=false
+    if command -v dig &> /dev/null || command -v nslookup &> /dev/null; then
+        dns_tools_available=true
+    fi
+    
+    if [ "$dns_tools_available" = false ]; then
+        missing_tools+=("dig or nslookup")
+    fi
+    
     if [ ${#missing_tools[@]} -ne 0 ]; then
         log "ERROR" "Missing required tools: ${missing_tools[*]}"
         log "ERROR" "Please install missing tools and try again"
@@ -171,6 +181,16 @@ validate_config() {
     
     if ! [[ "${HTTP_TIMEOUT:-10}" =~ ^[0-9]+$ ]] || [ "${HTTP_TIMEOUT:-10}" -lt 1 ] || [ "${HTTP_TIMEOUT:-10}" -gt 300 ]; then
         log "ERROR" "HTTP_TIMEOUT must be a number between 1-300 (got: ${HTTP_TIMEOUT:-10})"
+        ((errors++))
+    fi
+    
+    if ! [[ "${DNS_TIMEOUT:-5}" =~ ^[0-9]+$ ]] || [ "${DNS_TIMEOUT:-5}" -lt 1 ] || [ "${DNS_TIMEOUT:-5}" -gt 60 ]; then
+        log "ERROR" "DNS_TIMEOUT must be a number between 1-60 (got: ${DNS_TIMEOUT:-5})"
+        ((errors++))
+    fi
+    
+    if [[ "${DNS_ENABLED:-true}" != "true" ]] && [[ "${DNS_ENABLED:-true}" != "false" ]]; then
+        log "ERROR" "DNS_ENABLED must be true or false (got: ${DNS_ENABLED:-true})"
         ((errors++))
     fi
     
@@ -334,6 +354,10 @@ PING_TIMEOUT=10
 TRACEROUTE_MAX_HOPS=30
 TRACEROUTE_TIMEOUT=5
 
+# DNS resolution test settings
+DNS_TIMEOUT=5
+DNS_ENABLED=true
+
 # HTTP/HTTPS test settings
 HTTP_TIMEOUT=10
 HTTP_USER_AGENT="netnoise/1.0"
@@ -380,6 +404,117 @@ test_ping() {
         log "ERROR" "Ping to $hostname failed"
         return 1
     fi
+}
+
+# Test DNS resolution
+test_dns() {
+    local target="$1"
+    local result_file="$2"
+    
+    log "INFO" "Testing DNS resolution for $target"
+    
+    # Extract hostname from URL if needed
+    local hostname="$target"
+    if [[ "$target" =~ ^https?:// ]]; then
+        hostname=$(echo "$target" | sed 's|^https\?://||' | cut -d'/' -f1)
+    fi
+    
+    # Validate hostname to prevent command injection
+    if [[ ! "$hostname" =~ ^[a-zA-Z0-9.-]+$ ]] || [[ "$hostname" =~ ^\. ]] || [[ "$hostname" =~ \.$ ]] || [[ "$hostname" =~ \.\. ]]; then
+        echo "  \"dns\": {\"status\": \"failed\", \"error\": \"invalid hostname format\"}" >> "$result_file"
+        log "ERROR" "Invalid hostname format: $hostname"
+        return 1
+    fi
+    
+    local dns_start_time=$(date +%s.%N)
+    local dns_result=""
+    local dns_error=""
+    local dns_time_ms=""
+    local dns_records=""
+    
+    # Try dig first (more reliable and detailed)
+    if command -v dig &> /dev/null; then
+        if dns_result=$(timeout "$DNS_TIMEOUT" dig +short +time="$DNS_TIMEOUT" +tries=1 "$hostname" A 2>&1); then
+            if [ -n "$dns_result" ] && [ "$dns_result" != "" ]; then
+                # Extract IP addresses from dig output with proper validation
+                local ip_addresses=()
+                while IFS= read -r line; do
+                    if [[ "$line" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                        # Validate each octet is <= 255
+                        local valid_ip=true
+                        IFS='.' read -ra ADDR <<< "$line"
+                        for octet in "${ADDR[@]}"; do
+                            if [ "$octet" -gt 255 ] || [ "$octet" -lt 0 ]; then
+                                valid_ip=false
+                                break
+                            fi
+                        done
+                        if [ "$valid_ip" = true ]; then
+                            ip_addresses+=("$line")
+                        fi
+                    fi
+                done <<< "$dns_result"
+                if [ ${#ip_addresses[@]} -gt 0 ]; then
+                    dns_records=$(printf '%s,' "${ip_addresses[@]}" | sed 's/,$//')
+                    local dns_end_time=$(date +%s.%N)
+                    dns_time_ms=$(echo "($dns_end_time - $dns_start_time) * 1000" | bc -l 2>/dev/null | cut -d. -f1 || echo "0")
+                    echo "  \"dns\": {\"status\": \"success\", \"time_ms\": \"$dns_time_ms\", \"records\": \"$dns_records\", \"method\": \"dig\"}" >> "$result_file"
+                    log "SUCCESS" "DNS resolution for $hostname successful (${dns_time_ms}ms, IPs: $dns_records)"
+                    return 0
+                else
+                    dns_error="No valid IP addresses found in DNS response"
+                fi
+            else
+                dns_error="Empty DNS response"
+            fi
+        else
+            dns_error="dig command failed"
+        fi
+    # Fallback to nslookup if dig is not available
+    elif command -v nslookup &> /dev/null; then
+        if dns_result=$(timeout "$DNS_TIMEOUT" nslookup "$hostname" 2>&1); then
+            # Extract IP addresses from nslookup output with proper validation
+            local ip_addresses=()
+            while IFS= read -r line; do
+                if [[ "$line" =~ Address:[[:space:]]+([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}) ]]; then
+                    local ip="${BASH_REMATCH[1]}"
+                    # Validate each octet is <= 255
+                    local valid_ip=true
+                    IFS='.' read -ra ADDR <<< "$ip"
+                    for octet in "${ADDR[@]}"; do
+                        if [ "$octet" -gt 255 ] || [ "$octet" -lt 0 ]; then
+                            valid_ip=false
+                            break
+                        fi
+                    done
+                    if [ "$valid_ip" = true ]; then
+                        ip_addresses+=("$ip")
+                    fi
+                fi
+            done <<< "$dns_result"
+            if [ ${#ip_addresses[@]} -gt 0 ]; then
+                dns_records=$(printf '%s,' "${ip_addresses[@]}" | sed 's/,$//')
+                local dns_end_time=$(date +%s.%N)
+                dns_time_ms=$(echo "($dns_end_time - $dns_start_time) * 1000" | bc -l 2>/dev/null | cut -d. -f1 || echo "0")
+                echo "  \"dns\": {\"status\": \"success\", \"time_ms\": \"$dns_time_ms\", \"records\": \"$dns_records\", \"method\": \"nslookup\"}" >> "$result_file"
+                log "SUCCESS" "DNS resolution for $hostname successful (${dns_time_ms}ms, IPs: $dns_records)"
+                return 0
+            else
+                dns_error="No valid IP addresses found in DNS response"
+            fi
+        else
+            dns_error="nslookup command failed"
+        fi
+    else
+        dns_error="Neither dig nor nslookup available"
+    fi
+    
+    # If we get here, DNS resolution failed
+    local dns_end_time=$(date +%s.%N)
+    dns_time_ms=$(echo "($dns_end_time - $dns_start_time) * 1000" | bc -l 2>/dev/null | cut -d. -f1 || echo "0")
+    echo "  \"dns\": {\"status\": \"failed\", \"time_ms\": \"$dns_time_ms\", \"error\": \"$dns_error\"}" >> "$result_file"
+    log "ERROR" "DNS resolution for $hostname failed: $dns_error"
+    return 1
 }
 
 # Test HTTP/HTTPS connectivity
@@ -527,6 +662,16 @@ test_target() {
     echo "  \"target\": \"$target\"," >> "$result_file"
     echo "  \"timestamp\": \"$timestamp\"," >> "$result_file"
     
+    # Test DNS resolution (if enabled)
+    local dns_result=0
+    if [ "${DNS_ENABLED:-true}" = "true" ]; then
+        test_dns "$target" "$result_file"
+        dns_result=$?
+    else
+        echo "  \"dns\": {\"status\": \"disabled\", \"message\": \"DNS testing disabled in configuration\"}" >> "$result_file"
+        log "INFO" "DNS testing disabled for $target"
+    fi
+    
     # Test ping
     test_ping "$target" "$result_file"
     local ping_result=$?
@@ -580,7 +725,7 @@ test_target() {
     rm -f "$result_file"
     
     # Return overall result
-    if [ $ping_result -eq 0 ] || [ $http_result -eq 0 ]; then
+    if [ $dns_result -eq 0 ] || [ $ping_result -eq 0 ] || [ $http_result -eq 0 ]; then
         log "SUCCESS" "Target $target is reachable"
         return 0
     else
