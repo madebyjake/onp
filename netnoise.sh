@@ -194,6 +194,21 @@ validate_config() {
         ((errors++))
     fi
     
+    if ! [[ "${BANDWIDTH_TIMEOUT:-30}" =~ ^[0-9]+$ ]] || [ "${BANDWIDTH_TIMEOUT:-30}" -lt 5 ] || [ "${BANDWIDTH_TIMEOUT:-30}" -gt 300 ]; then
+        log "ERROR" "BANDWIDTH_TIMEOUT must be a number between 5-300 (got: ${BANDWIDTH_TIMEOUT:-30})"
+        ((errors++))
+    fi
+    
+    if [[ "${BANDWIDTH_ENABLED:-false}" != "true" ]] && [[ "${BANDWIDTH_ENABLED:-false}" != "false" ]]; then
+        log "ERROR" "BANDWIDTH_ENABLED must be true or false (got: ${BANDWIDTH_ENABLED:-false})"
+        ((errors++))
+    fi
+    
+    if [[ "${BANDWIDTH_TEST_UPLOAD:-false}" != "true" ]] && [[ "${BANDWIDTH_TEST_UPLOAD:-false}" != "false" ]]; then
+        log "ERROR" "BANDWIDTH_TEST_UPLOAD must be true or false (got: ${BANDWIDTH_TEST_UPLOAD:-false})"
+        ((errors++))
+    fi
+    
     if ! [[ "${LOG_RETENTION_DAYS:-30}" =~ ^[0-9]+$ ]] || [ "${LOG_RETENTION_DAYS:-30}" -lt 1 ] || [ "${LOG_RETENTION_DAYS:-30}" -gt 3650 ]; then
         log "ERROR" "LOG_RETENTION_DAYS must be a number between 1-3650 (got: ${LOG_RETENTION_DAYS:-30})"
         ((errors++))
@@ -358,6 +373,11 @@ TRACEROUTE_TIMEOUT=5
 DNS_TIMEOUT=5
 DNS_ENABLED=true
 
+# Bandwidth test settings
+BANDWIDTH_ENABLED=false
+BANDWIDTH_TIMEOUT=30
+BANDWIDTH_TEST_UPLOAD=false
+
 # HTTP/HTTPS test settings
 HTTP_TIMEOUT=10
 HTTP_USER_AGENT="netnoise/1.0"
@@ -515,6 +535,149 @@ test_dns() {
     echo "  \"dns\": {\"status\": \"failed\", \"time_ms\": \"$dns_time_ms\", \"error\": \"$dns_error\"}" >> "$result_file"
     log "ERROR" "DNS resolution for $hostname failed: $dns_error"
     return 1
+}
+
+# Test bandwidth (upload/download speed)
+test_bandwidth() {
+    local target="$1"
+    local result_file="$2"
+    
+    log "INFO" "Testing bandwidth to $target"
+    
+    # Extract hostname from URL if needed
+    local hostname="$target"
+    local test_url="$target"
+    if [[ "$target" =~ ^https?:// ]]; then
+        hostname=$(echo "$target" | sed 's|^https\?://||' | cut -d'/' -f1)
+        test_url="$target"
+    else
+        # Default to HTTPS for bandwidth testing
+        test_url="https://$target"
+    fi
+    
+    # Validate hostname to prevent command injection
+    if [[ ! "$hostname" =~ ^[a-zA-Z0-9.-]+$ ]] || [[ "$hostname" =~ ^\. ]] || [[ "$hostname" =~ \.$ ]] || [[ "$hostname" =~ \.\. ]]; then
+        echo "  \"bandwidth\": {\"status\": \"failed\", \"error\": \"invalid hostname format\"}" >> "$result_file"
+        log "ERROR" "Invalid hostname format: $hostname"
+        return 1
+    fi
+    
+    local bandwidth_start_time=$(date +%s.%N)
+    local download_speed=""
+    local upload_speed=""
+    local bandwidth_error=""
+    local total_time=""
+    
+    # Test download speed
+    local download_test_file="/tmp/bandwidth_download_$$"
+    local download_result=""
+    
+    if command -v curl &> /dev/null; then
+        # Use curl for download test
+        if download_result=$(timeout "$BANDWIDTH_TIMEOUT" curl -s -w "\n%{speed_download}\n%{time_total}" \
+            -o "$download_test_file" \
+            --max-time "$BANDWIDTH_TIMEOUT" \
+            --connect-timeout 10 \
+            -A "$HTTP_USER_AGENT" \
+            "$test_url" 2>&1); then
+            
+            # Parse curl output
+            local speed_bytes=$(echo "$download_result" | tail -n 2 | head -n 1)
+            total_time=$(echo "$download_result" | tail -n 1)
+            
+            # Convert bytes per second to Mbps
+            if [[ "$speed_bytes" =~ ^[0-9]+$ ]] && [ "$speed_bytes" -gt 0 ]; then
+                download_speed=$(echo "scale=2; $speed_bytes * 8 / 1000000" | bc -l 2>/dev/null || echo "0")
+            else
+                bandwidth_error="Invalid download speed data"
+            fi
+        else
+            bandwidth_error="Download test failed"
+        fi
+    elif command -v wget &> /dev/null; then
+        # Use wget for download test
+        local wget_start_time=$(date +%s.%N)
+        if download_result=$(timeout "$BANDWIDTH_TIMEOUT" wget -O "$download_test_file" \
+            --timeout="$BANDWIDTH_TIMEOUT" \
+            --tries=1 \
+            --user-agent="$HTTP_USER_AGENT" \
+            "$test_url" 2>&1); then
+            
+            local wget_end_time=$(date +%s.%N)
+            local wget_duration=$(echo "$wget_end_time - $wget_start_time" | bc -l 2>/dev/null || echo "1")
+            
+            # Extract file size and calculate speed
+            local file_size=$(stat -f%z "$download_test_file" 2>/dev/null || echo "0")
+            if [ "$file_size" -gt 0 ] && [ "$wget_duration" -gt 0 ]; then
+                download_speed=$(echo "scale=2; $file_size * 8 / $wget_duration / 1000000" | bc -l 2>/dev/null || echo "0")
+            else
+                bandwidth_error="Invalid download data from wget"
+            fi
+        else
+            bandwidth_error="Download test failed with wget"
+        fi
+    else
+        bandwidth_error="Neither curl nor wget available for bandwidth testing"
+    fi
+    
+    # Test upload speed (if enabled and tools available)
+    local upload_speed=""
+    if [ "${BANDWIDTH_TEST_UPLOAD:-false}" = "true" ] && command -v curl &> /dev/null; then
+        local upload_test_file="/tmp/bandwidth_upload_$$"
+        
+        # Create test data for upload (1MB)
+        dd if=/dev/zero of="$upload_test_file" bs=1024 count=1024 2>/dev/null
+        
+        # Use a service that supports POST uploads for testing
+        local upload_url="https://httpbin.org/post"
+        
+        if upload_result=$(timeout "$BANDWIDTH_TIMEOUT" curl -s -w "\n%{speed_upload}\n%{time_total}" \
+            -X POST \
+            -F "file=@$upload_test_file" \
+            --max-time "$BANDWIDTH_TIMEOUT" \
+            --connect-timeout 10 \
+            -A "$HTTP_USER_AGENT" \
+            "$upload_url" 2>&1); then
+            
+            # Parse upload speed
+            local upload_speed_bytes=$(echo "$upload_result" | tail -n 2 | head -n 1)
+            if [[ "$upload_speed_bytes" =~ ^[0-9]+$ ]] && [ "$upload_speed_bytes" -gt 0 ]; then
+                upload_speed=$(echo "scale=2; $upload_speed_bytes * 8 / 1000000" | bc -l 2>/dev/null || echo "0")
+            fi
+        fi
+        
+        rm -f "$upload_test_file"
+    fi
+    
+    # Clean up download test file
+    rm -f "$download_test_file"
+    
+    # Calculate total test time
+    local bandwidth_end_time=$(date +%s.%N)
+    local test_duration=$(echo "($bandwidth_end_time - $bandwidth_start_time) * 1000" | bc -l 2>/dev/null | cut -d. -f1 || echo "0")
+    
+    # Prepare results
+    if [ -n "$bandwidth_error" ]; then
+        echo "  \"bandwidth\": {\"status\": \"failed\", \"time_ms\": \"$test_duration\", \"error\": \"$bandwidth_error\"}" >> "$result_file"
+        log "ERROR" "Bandwidth test failed: $bandwidth_error"
+        return 1
+    else
+        local bandwidth_json="  \"bandwidth\": {\"status\": \"success\", \"time_ms\": \"$test_duration\", \"download_mbps\": \"$download_speed\""
+        
+        if [ -n "$upload_speed" ] && [ "$upload_speed" != "0" ]; then
+            bandwidth_json="$bandwidth_json, \"upload_mbps\": \"$upload_speed\""
+        fi
+        
+        bandwidth_json="$bandwidth_json, \"method\": \"curl\"}"
+        echo "$bandwidth_json" >> "$result_file"
+        
+        if [ -n "$upload_speed" ] && [ "$upload_speed" != "0" ]; then
+            log "SUCCESS" "Bandwidth test successful - Download: ${download_speed}Mbps, Upload: ${upload_speed}Mbps"
+        else
+            log "SUCCESS" "Bandwidth test successful - Download: ${download_speed}Mbps"
+        fi
+        return 0
+    fi
 }
 
 # Test HTTP/HTTPS connectivity
@@ -676,6 +839,16 @@ test_target() {
     test_ping "$target" "$result_file"
     local ping_result=$?
     
+    # Test bandwidth (if enabled)
+    local bandwidth_result=0  # Default to success when disabled
+    if [ "${BANDWIDTH_ENABLED:-false}" = "true" ]; then
+        test_bandwidth "$target" "$result_file"
+        bandwidth_result=$?
+    else
+        echo "  \"bandwidth\": {\"status\": \"disabled\", \"message\": \"Bandwidth testing disabled in configuration\"}" >> "$result_file"
+        log "INFO" "Bandwidth testing disabled for $target"
+    fi
+    
     # Test HTTP
     test_http "$target" "$result_file"
     local http_result=$?
@@ -725,7 +898,7 @@ test_target() {
     rm -f "$result_file"
     
     # Return overall result
-    if [ $dns_result -eq 0 ] || [ $ping_result -eq 0 ] || [ $http_result -eq 0 ]; then
+    if [ $dns_result -eq 0 ] || [ $ping_result -eq 0 ] || [ $bandwidth_result -eq 0 ] || [ $http_result -eq 0 ]; then
         log "SUCCESS" "Target $target is reachable"
         return 0
     else
