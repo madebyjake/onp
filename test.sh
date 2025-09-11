@@ -16,7 +16,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Test configuration
-TEST_TARGETS=("${TEST_TARGETS[@]:-google.com cloudflare.com}")
+TEST_TARGETS=("${TEST_TARGETS[@]:-google.com}" "cloudflare.com")
 
 log() {
     local level="$1"
@@ -54,6 +54,16 @@ test_dependencies() {
         fi
     done
     
+    # Check for at least one DNS tool
+    local dns_tools_available=false
+    if command -v dig &> /dev/null || command -v nslookup &> /dev/null; then
+        dns_tools_available=true
+    fi
+    
+    if [ "$dns_tools_available" = false ]; then
+        missing_tools+=("dig or nslookup")
+    fi
+    
     if [ ${#missing_tools[@]} -ne 0 ]; then
         log "ERROR" "Missing tools: ${missing_tools[*]}"
         return 1
@@ -69,11 +79,27 @@ test_syntax() {
     
     if bash -n ./netnoise.sh; then
         log "SUCCESS" "Script syntax is valid"
-        return 0
     else
         log "ERROR" "Script syntax errors found"
         return 1
     fi
+    
+    # Test module syntax
+    if [ -d "./modules" ]; then
+        log "INFO" "Testing module syntax..."
+        for module in modules/*.sh; do
+            if [ -f "$module" ]; then
+                if bash -n "$module"; then
+                    log "SUCCESS" "Module $(basename "$module") syntax is valid"
+                else
+                    log "ERROR" "Module $(basename "$module") syntax errors found"
+                    return 1
+                fi
+            fi
+        done
+    fi
+    
+    return 0
 }
 
 # Test configuration loading
@@ -122,6 +148,148 @@ test_http() {
         return 0
     else
         log "WARN" "HTTP to $target failed (this may be expected)"
+        return 1
+    fi
+}
+
+test_dns() {
+    local target="$1"
+    log "INFO" "Testing DNS resolution for $target..."
+    
+    # Use a subshell to prevent exit on failure
+    local dns_result=""
+    if command -v dig &> /dev/null; then
+        if dns_result=$(dig +short +time=5 +tries=1 "$target" A 2>/dev/null); then
+            if [ -n "$dns_result" ] && [ "$dns_result" != "" ]; then
+                log "SUCCESS" "DNS resolution for $target successful (dig: $dns_result)"
+                return 0
+            fi
+        fi
+    elif command -v nslookup &> /dev/null; then
+        if dns_result=$(nslookup "$target" 2>/dev/null | grep -E 'Address: [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -1); then
+            if [ -n "$dns_result" ]; then
+                log "SUCCESS" "DNS resolution for $target successful (nslookup: $dns_result)"
+                return 0
+            fi
+        fi
+    fi
+    
+    log "WARN" "DNS resolution for $target failed (this may be expected)"
+    return 1
+}
+
+test_bandwidth() {
+    local target="$1"
+    log "INFO" "Testing bandwidth to $target..."
+    
+    # Use a subshell to prevent exit on failure
+    local test_url="https://$target"
+    local download_result=""
+    local download_file="/tmp/test_bandwidth_$$"
+    
+    if command -v curl &> /dev/null; then
+        if download_result=$(curl -s -w "\n%{speed_download}\n%{time_total}" -o "$download_file" --max-time 10 "$test_url" 2>/dev/null); then
+            local speed_bytes=$(echo "$download_result" | tail -n 2 | head -n 1)
+            if [[ "$speed_bytes" =~ ^[0-9]+$ ]] && [ "$speed_bytes" -gt 0 ]; then
+                local speed_mbps=$(echo "scale=2; $speed_bytes * 8 / 1000000" | bc -l 2>/dev/null || echo "0")
+                log "SUCCESS" "Bandwidth test to $target successful (${speed_mbps}Mbps)"
+                rm -f "$download_file"
+                return 0
+            fi
+        fi
+    elif command -v wget &> /dev/null; then
+        if wget -O "$download_file" --timeout=10 --tries=1 "$test_url" 2>/dev/null; then
+            local file_size=$(stat -f%z "$download_file" 2>/dev/null || echo "0")
+            if [ "$file_size" -gt 0 ]; then
+                log "SUCCESS" "Bandwidth test to $target successful (file downloaded: ${file_size} bytes)"
+                rm -f "$download_file"
+                return 0
+            fi
+        fi
+    fi
+    
+    rm -f "$download_file"
+    log "WARN" "Bandwidth test to $target failed (this may be expected)"
+    return 1
+}
+
+test_ports() {
+    local target="$1"
+    log "INFO" "Testing port connectivity to $target..."
+    
+    # Extract hostname from URL if needed
+    local hostname="$target"
+    if [[ "$target" =~ ^https?:// ]]; then
+        hostname=$(echo "$target" | sed 's|^https\?://||' | cut -d'/' -f1)
+    fi
+    
+    # Test a few common ports
+    local test_ports=(22 80 443)
+    local open_ports=()
+    
+    for port in "${test_ports[@]}"; do
+        if command -v nc &> /dev/null; then
+            if timeout 3 nc -z -w3 "$hostname" "$port" 2>/dev/null; then
+                open_ports+=("$port")
+                log "SUCCESS" "Port $port on $hostname is open"
+            fi
+        elif [ -c /dev/tcp ]; then
+            if timeout 3 bash -c "exec 3<>/dev/tcp/$hostname/$port" 2>/dev/null; then
+                open_ports+=("$port")
+                log "SUCCESS" "Port $port on $hostname is open"
+                exec 3<&- 2>/dev/null || true
+            fi
+        fi
+    done
+    
+    if [ ${#open_ports[@]} -gt 0 ]; then
+        log "SUCCESS" "Port test to $target successful (open ports: ${open_ports[*]})"
+        return 0
+    else
+        log "WARN" "Port test to $target failed (no open ports found)"
+        return 1
+    fi
+}
+
+test_mtu() {
+    local target="$1"
+    log "INFO" "Testing MTU discovery to $target..."
+    
+    # Extract hostname from URL if needed
+    local hostname="$target"
+    if [[ "$target" =~ ^https?:// ]]; then
+        hostname=$(echo "$target" | sed 's|^https\?://||' | cut -d'/' -f1)
+    fi
+    
+    # Test with a simple MTU discovery (test 1500 and 576)
+    local test_mtus=(1500 576)
+    local found_mtu=0
+    
+    for mtu in "${test_mtus[@]}"; do
+        local payload_size=$((mtu - 28))  # Subtract IP and ICMP headers
+        
+        # Test with ping Don't Fragment flag (detect OS)
+        local ping_cmd="ping -c 1 -s $payload_size -W 3"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS uses -D for Don't Fragment
+            ping_cmd="$ping_cmd -D"
+        else
+            # Linux uses -M do for Don't Fragment
+            ping_cmd="$ping_cmd -M do"
+        fi
+        
+        if timeout 3 "$ping_cmd" "$hostname" &>/dev/null; then
+            found_mtu=$mtu
+            log "SUCCESS" "MTU $mtu bytes successful on $hostname"
+            break
+        fi
+    done
+    
+    if [ "$found_mtu" -gt 0 ]; then
+        log "SUCCESS" "MTU test to $target successful (found MTU: $found_mtu bytes)"
+        return 0
+    else
+        log "WARN" "MTU test to $target failed (no valid MTU found)"
         return 1
     fi
 }
@@ -229,6 +397,18 @@ main() {
     for target in "${TEST_TARGETS[@]}"; do
         tests_total=$((tests_total + 1))
         network_tests_total=$((network_tests_total + 1))
+        log "INFO" "Testing DNS resolution for $target..."
+        if test_dns "$target"; then
+            tests_passed=$((tests_passed + 1))
+            network_tests_passed=$((network_tests_passed + 1))
+            log "SUCCESS" "DNS test to $target passed"
+        else
+            log "WARN" "DNS test to $target failed (may be expected in CI)"
+        fi
+        echo
+        
+        tests_total=$((tests_total + 1))
+        network_tests_total=$((network_tests_total + 1))
         log "INFO" "Testing ping connectivity to $target..."
         if test_ping "$target"; then
             tests_passed=$((tests_passed + 1))
@@ -236,6 +416,42 @@ main() {
             log "SUCCESS" "Ping test to $target passed"
         else
             log "WARN" "Ping test to $target failed (may be expected in CI)"
+        fi
+        echo
+        
+        tests_total=$((tests_total + 1))
+        network_tests_total=$((network_tests_total + 1))
+        log "INFO" "Testing bandwidth to $target..."
+        if test_bandwidth "$target"; then
+            tests_passed=$((tests_passed + 1))
+            network_tests_passed=$((network_tests_passed + 1))
+            log "SUCCESS" "Bandwidth test to $target passed"
+        else
+            log "WARN" "Bandwidth test to $target failed (may be expected in CI)"
+        fi
+        echo
+        
+        tests_total=$((tests_total + 1))
+        network_tests_total=$((network_tests_total + 1))
+        log "INFO" "Testing port connectivity to $target..."
+        if test_ports "$target"; then
+            tests_passed=$((tests_passed + 1))
+            network_tests_passed=$((network_tests_passed + 1))
+            log "SUCCESS" "Port test to $target passed"
+        else
+            log "WARN" "Port test to $target failed (may be expected in CI)"
+        fi
+        echo
+        
+        tests_total=$((tests_total + 1))
+        network_tests_total=$((network_tests_total + 1))
+        log "INFO" "Testing MTU discovery to $target..."
+        if test_mtu "$target"; then
+            tests_passed=$((tests_passed + 1))
+            network_tests_passed=$((network_tests_passed + 1))
+            log "SUCCESS" "MTU test to $target passed"
+        else
+            log "WARN" "MTU test to $target failed (may be expected in CI)"
         fi
         echo
         
