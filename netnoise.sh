@@ -219,6 +219,36 @@ validate_config() {
         ((errors++))
     fi
     
+    if ! [[ "${MTU_TIMEOUT:-5}" =~ ^[0-9]+$ ]] || [ "${MTU_TIMEOUT:-5}" -lt 1 ] || [ "${MTU_TIMEOUT:-5}" -gt 30 ]; then
+        log "ERROR" "MTU_TIMEOUT must be a number between 1-30 (got: ${MTU_TIMEOUT:-5})"
+        ((errors++))
+    fi
+    
+    if [[ "${MTU_ENABLED:-false}" != "true" ]] && [[ "${MTU_ENABLED:-false}" != "false" ]]; then
+        log "ERROR" "MTU_ENABLED must be true or false (got: ${MTU_ENABLED:-false})"
+        ((errors++))
+    fi
+    
+    if ! [[ "${MTU_MIN:-576}" =~ ^[0-9]+$ ]] || [ "${MTU_MIN:-576}" -lt 68 ] || [ "${MTU_MIN:-576}" -gt 9000 ]; then
+        log "ERROR" "MTU_MIN must be a number between 68-9000 (got: ${MTU_MIN:-576})"
+        ((errors++))
+    fi
+    
+    if ! [[ "${MTU_MAX:-1500}" =~ ^[0-9]+$ ]] || [ "${MTU_MAX:-1500}" -lt 68 ] || [ "${MTU_MAX:-1500}" -gt 9000 ]; then
+        log "ERROR" "MTU_MAX must be a number between 68-9000 (got: ${MTU_MAX:-1500})"
+        ((errors++))
+    fi
+    
+    if ! [[ "${MTU_STEP:-10}" =~ ^[0-9]+$ ]] || [ "${MTU_STEP:-10}" -lt 1 ] || [ "${MTU_STEP:-10}" -gt 100 ]; then
+        log "ERROR" "MTU_STEP must be a number between 1-100 (got: ${MTU_STEP:-10})"
+        ((errors++))
+    fi
+    
+    if [ "${MTU_MIN:-576}" -ge "${MTU_MAX:-1500}" ]; then
+        log "ERROR" "MTU_MIN (${MTU_MIN:-576}) must be less than MTU_MAX (${MTU_MAX:-1500})"
+        ((errors++))
+    fi
+    
     if ! [[ "${LOG_RETENTION_DAYS:-30}" =~ ^[0-9]+$ ]] || [ "${LOG_RETENTION_DAYS:-30}" -lt 1 ] || [ "${LOG_RETENTION_DAYS:-30}" -gt 3650 ]; then
         log "ERROR" "LOG_RETENTION_DAYS must be a number between 1-3650 (got: ${LOG_RETENTION_DAYS:-30})"
         ((errors++))
@@ -392,6 +422,13 @@ BANDWIDTH_TEST_UPLOAD=false
 PORT_SCAN_ENABLED=false
 PORT_SCAN_TIMEOUT=5
 PORT_SCAN_PORTS="22,80,443,25,53,110,143,993,995"
+
+# MTU discovery test settings
+MTU_ENABLED=false
+MTU_TIMEOUT=5
+MTU_MIN=576
+MTU_MAX=1500
+MTU_STEP=10
 
 # HTTP/HTTPS test settings
 HTTP_TIMEOUT=10
@@ -809,6 +846,119 @@ test_ports() {
     fi
 }
 
+# Test MTU discovery
+test_mtu() {
+    local target="$1"
+    local result_file="$2"
+    
+    log "INFO" "Testing MTU discovery to $target"
+    
+    # Extract hostname from URL if needed
+    local hostname="$target"
+    if [[ "$target" =~ ^https?:// ]]; then
+        hostname=$(echo "$target" | sed 's|^https\?://||' | cut -d'/' -f1)
+    fi
+    
+    # Validate hostname to prevent command injection
+    if [[ ! "$hostname" =~ ^[a-zA-Z0-9.-]+$ ]] || [[ "$hostname" =~ ^\. ]] || [[ "$hostname" =~ \.$ ]] || [[ "$hostname" =~ \.\. ]]; then
+        echo "  \"mtu\": {\"status\": \"failed\", \"error\": \"invalid hostname format\"}" >> "$result_file"
+        log "ERROR" "Invalid hostname format: $hostname"
+        return 1
+    fi
+    
+    local mtu_start_time=$(date +%s.%N)
+    local mtu_error=""
+    local discovered_mtu=0
+    local test_count=0
+    
+    # Parse MTU configuration
+    local min_mtu="${MTU_MIN:-576}"
+    local max_mtu="${MTU_MAX:-1500}"
+    local mtu_step="${MTU_STEP:-10}"
+    
+    # Validate configuration
+    if ! [[ "$min_mtu" =~ ^[0-9]+$ ]] || [ "$min_mtu" -lt 68 ] || [ "$min_mtu" -gt 9000 ]; then
+        mtu_error="Invalid MTU_MIN value: $min_mtu (must be 68-9000)"
+    elif ! [[ "$max_mtu" =~ ^[0-9]+$ ]] || [ "$max_mtu" -lt 68 ] || [ "$max_mtu" -gt 9000 ]; then
+        mtu_error="Invalid MTU_MAX value: $max_mtu (must be 68-9000)"
+    elif ! [[ "$mtu_step" =~ ^[0-9]+$ ]] || [ "$mtu_step" -lt 1 ] || [ "$mtu_step" -gt 100 ]; then
+        mtu_error="Invalid MTU_STEP value: $mtu_step (must be 1-100)"
+    elif [ "$min_mtu" -ge "$max_mtu" ]; then
+        mtu_error="MTU_MIN ($min_mtu) must be less than MTU_MAX ($max_mtu)"
+    fi
+    
+    if [ -n "$mtu_error" ]; then
+        echo "  \"mtu\": {\"status\": \"failed\", \"error\": \"$mtu_error\"}" >> "$result_file"
+        log "ERROR" "MTU discovery configuration error: $mtu_error"
+        return 1
+    fi
+    
+    # Binary search for optimal MTU
+    local low=$min_mtu
+    local high=$max_mtu
+    local best_mtu=$min_mtu
+    
+    log "INFO" "Starting MTU discovery: range $min_mtu-$max_mtu bytes, step $mtu_step"
+    
+    while [ $low -le $high ]; do
+        local current_mtu=$(((low + high) / 2))
+        local payload_size=$((current_mtu - 28))  # Subtract IP and ICMP headers
+        
+        # Ensure payload size is within valid range
+        if [ "$payload_size" -lt 0 ] || [ "$payload_size" -gt 65507 ]; then
+            if [ "$current_mtu" -lt "$min_mtu" ]; then
+                low=$((current_mtu + 1))
+            else
+                high=$((current_mtu - 1))
+            fi
+            continue
+        fi
+        
+        test_count=$((test_count + 1))
+        
+        # Test with ping Don't Fragment flag (detect OS)
+        local ping_cmd="ping -c 1 -s $payload_size -W $MTU_TIMEOUT"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS uses -D for Don't Fragment
+            ping_cmd="$ping_cmd -D"
+        else
+            # Linux uses -M do for Don't Fragment
+            ping_cmd="$ping_cmd -M do"
+        fi
+        
+        if timeout "$MTU_TIMEOUT" $ping_cmd "$hostname" &>/dev/null; then
+            best_mtu=$current_mtu
+            low=$((current_mtu + mtu_step))
+            log "DEBUG" "MTU $current_mtu bytes successful"
+        else
+            high=$((current_mtu - mtu_step))
+            log "DEBUG" "MTU $current_mtu bytes failed"
+        fi
+        
+        # Safety check to prevent infinite loops
+        if [ $test_count -gt 50 ]; then
+            log "WARN" "MTU discovery exceeded maximum test count, stopping"
+            break
+        fi
+    done
+    
+    # Calculate total test time
+    local mtu_end_time=$(date +%s.%N)
+    local test_duration=$(echo "($mtu_end_time - $mtu_start_time) * 1000" | bc -l 2>/dev/null | cut -d. -f1 || echo "0")
+    
+    # Prepare results
+    if [ "$best_mtu" -gt "$min_mtu" ]; then
+        discovered_mtu=$best_mtu
+        echo "  \"mtu\": {\"status\": \"success\", \"time_ms\": \"$test_duration\", \"discovered_mtu\": $discovered_mtu, \"test_count\": $test_count, \"range\": \"$min_mtu-$max_mtu\"}" >> "$result_file"
+        log "SUCCESS" "MTU discovery completed - optimal MTU: ${discovered_mtu} bytes (tested $test_count times)"
+        return 0
+    else
+        echo "  \"mtu\": {\"status\": \"failed\", \"time_ms\": \"$test_duration\", \"error\": \"no valid MTU found in range $min_mtu-$max_mtu\", \"test_count\": $test_count}" >> "$result_file"
+        log "ERROR" "MTU discovery failed - no valid MTU found in range $min_mtu-$max_mtu"
+        return 1
+    fi
+}
+
 # Test HTTP/HTTPS connectivity
 test_http() {
     local target="$1"
@@ -988,6 +1138,16 @@ test_target() {
         log "INFO" "Port scanning disabled for $target"
     fi
     
+    # Test MTU discovery (if enabled)
+    local mtu_result=0  # Default to success when disabled
+    if [ "${MTU_ENABLED:-false}" = "true" ]; then
+        test_mtu "$target" "$result_file"
+        mtu_result=$?
+    else
+        echo "  \"mtu\": {\"status\": \"disabled\", \"message\": \"MTU discovery disabled in configuration\"}" >> "$result_file"
+        log "INFO" "MTU discovery disabled for $target"
+    fi
+    
     # Test HTTP
     test_http "$target" "$result_file"
     local http_result=$?
@@ -1037,7 +1197,7 @@ test_target() {
     rm -f "$result_file"
     
     # Return overall result
-    if [ $dns_result -eq 0 ] || [ $ping_result -eq 0 ] || [ $bandwidth_result -eq 0 ] || [ $ports_result -eq 0 ] || [ $http_result -eq 0 ]; then
+    if [ $dns_result -eq 0 ] || [ $ping_result -eq 0 ] || [ $bandwidth_result -eq 0 ] || [ $ports_result -eq 0 ] || [ $mtu_result -eq 0 ] || [ $http_result -eq 0 ]; then
         log "SUCCESS" "Target $target is reachable"
         return 0
     else
