@@ -197,6 +197,44 @@ test_bandwidth() {
     return 1
 }
 
+test_ports() {
+    local target="$1"
+    log "INFO" "Testing port connectivity to $target..."
+    
+    # Extract hostname from URL if needed
+    local hostname="$target"
+    if [[ "$target" =~ ^https?:// ]]; then
+        hostname=$(echo "$target" | sed 's|^https\?://||' | cut -d'/' -f1)
+    fi
+    
+    # Test a few common ports
+    local test_ports=(22 80 443)
+    local open_ports=()
+    
+    for port in "${test_ports[@]}"; do
+        if command -v nc &> /dev/null; then
+            if timeout 3 nc -z -w3 "$hostname" "$port" 2>/dev/null; then
+                open_ports+=("$port")
+                log "SUCCESS" "Port $port on $hostname is open"
+            fi
+        elif [ -c /dev/tcp ]; then
+            if timeout 3 bash -c "exec 3<>/dev/tcp/$hostname/$port" 2>/dev/null; then
+                open_ports+=("$port")
+                log "SUCCESS" "Port $port on $hostname is open"
+                exec 3<&- 2>/dev/null || true
+            fi
+        fi
+    done
+    
+    if [ ${#open_ports[@]} -gt 0 ]; then
+        log "SUCCESS" "Port test to $target successful (open ports: ${open_ports[*]})"
+        return 0
+    else
+        log "WARN" "Port test to $target failed (no open ports found)"
+        return 1
+    fi
+}
+
 # Test systemd files
 test_systemd() {
     log "INFO" "Testing systemd files..."
@@ -331,6 +369,18 @@ main() {
             log "SUCCESS" "Bandwidth test to $target passed"
         else
             log "WARN" "Bandwidth test to $target failed (may be expected in CI)"
+        fi
+        echo
+        
+        tests_total=$((tests_total + 1))
+        network_tests_total=$((network_tests_total + 1))
+        log "INFO" "Testing port connectivity to $target..."
+        if test_ports "$target"; then
+            tests_passed=$((tests_passed + 1))
+            network_tests_passed=$((network_tests_passed + 1))
+            log "SUCCESS" "Port test to $target passed"
+        else
+            log "WARN" "Port test to $target failed (may be expected in CI)"
         fi
         echo
         
