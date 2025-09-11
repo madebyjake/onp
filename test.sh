@@ -162,6 +162,41 @@ test_dns() {
     return 1
 }
 
+test_bandwidth() {
+    local target="$1"
+    log "INFO" "Testing bandwidth to $target..."
+    
+    # Use a subshell to prevent exit on failure
+    local test_url="https://$target"
+    local download_result=""
+    local download_file="/tmp/test_bandwidth_$$"
+    
+    if command -v curl &> /dev/null; then
+        if download_result=$(curl -s -w "\n%{speed_download}\n%{time_total}" -o "$download_file" --max-time 10 "$test_url" 2>/dev/null); then
+            local speed_bytes=$(echo "$download_result" | tail -n 2 | head -n 1)
+            if [[ "$speed_bytes" =~ ^[0-9]+$ ]] && [ "$speed_bytes" -gt 0 ]; then
+                local speed_mbps=$(echo "scale=2; $speed_bytes * 8 / 1000000" | bc -l 2>/dev/null || echo "0")
+                log "SUCCESS" "Bandwidth test to $target successful (${speed_mbps}Mbps)"
+                rm -f "$download_file"
+                return 0
+            fi
+        fi
+    elif command -v wget &> /dev/null; then
+        if wget -O "$download_file" --timeout=10 --tries=1 "$test_url" 2>/dev/null; then
+            local file_size=$(stat -f%z "$download_file" 2>/dev/null || echo "0")
+            if [ "$file_size" -gt 0 ]; then
+                log "SUCCESS" "Bandwidth test to $target successful (file downloaded: ${file_size} bytes)"
+                rm -f "$download_file"
+                return 0
+            fi
+        fi
+    fi
+    
+    rm -f "$download_file"
+    log "WARN" "Bandwidth test to $target failed (this may be expected)"
+    return 1
+}
+
 # Test systemd files
 test_systemd() {
     log "INFO" "Testing systemd files..."
@@ -284,6 +319,18 @@ main() {
             log "SUCCESS" "Ping test to $target passed"
         else
             log "WARN" "Ping test to $target failed (may be expected in CI)"
+        fi
+        echo
+        
+        tests_total=$((tests_total + 1))
+        network_tests_total=$((network_tests_total + 1))
+        log "INFO" "Testing bandwidth to $target..."
+        if test_bandwidth "$target"; then
+            tests_passed=$((tests_passed + 1))
+            network_tests_passed=$((network_tests_passed + 1))
+            log "SUCCESS" "Bandwidth test to $target passed"
+        else
+            log "WARN" "Bandwidth test to $target failed (may be expected in CI)"
         fi
         echo
         
