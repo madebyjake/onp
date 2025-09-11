@@ -31,12 +31,24 @@ jobs:
         bash -n netnoise.sh
         bash -n install.sh
         bash -n test.sh
+        
+        echo "Testing module syntax..."
+        for module in modules/*.sh; do
+          echo "Testing $module..."
+          bash -n "$module"
+        done
 
     - name: Run ShellCheck
       run: |
         shellcheck netnoise.sh || true
         shellcheck install.sh || true
         shellcheck test.sh || true
+        
+        echo "Running ShellCheck on modules..."
+        for module in modules/*.sh; do
+          echo "Checking $module..."
+          shellcheck "$module" || true
+        done
 
     - name: Test configuration loading
       run: |
@@ -45,6 +57,9 @@ jobs:
         
         echo "Validating configuration variables..."
         bash -c "source netnoise.conf && echo 'Targets: ${#TARGETS[@]}'"
+        
+        echo "Testing refactored script configuration check..."
+        ./netnoise.sh --check
 
     - name: Test systemd files
       run: |
@@ -199,3 +214,9 @@ jobs:
         test -f test.sh && echo "✓ test.sh"
         test -f Makefile && echo "✓ Makefile"
         test -f README.md && echo "✓ README.md"
+        
+        echo "Checking modular structure..."
+        test -d modules && echo "✓ modules directory"
+        for module in modules/*.sh; do
+          test -f "$module" && echo "✓ $(basename "$module")"
+        done
