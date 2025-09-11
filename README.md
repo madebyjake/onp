@@ -1,10 +1,10 @@
 # NetNoise
 
-NetNoise is a network troubleshooting utility that performs active connectivity testing across multiple protocols. It conducts DNS resolution, ping, HTTP/HTTPS, and traceroute tests against configurable targets to help diagnose network issues and monitor connection health.
+NetNoise is a network troubleshooting utility that performs active connectivity testing across multiple protocols. It conducts DNS resolution, ping, bandwidth, HTTP/HTTPS, and traceroute tests against configurable targets to help diagnose network issues and monitor connection health.
 
 ## Features
 
-- Multi-protocol testing (DNS resolution, ping, HTTP/HTTPS, traceroute)
+- Multi-protocol testing (DNS resolution, ping, bandwidth, HTTP/HTTPS, traceroute)
 - Configurable target lists and test parameters
 - Structured logging with JSON output
 - Email and webhook alerting
@@ -82,6 +82,11 @@ TRACEROUTE_TIMEOUT=5
 DNS_TIMEOUT=5
 DNS_ENABLED=true
 
+# Bandwidth test settings
+BANDWIDTH_ENABLED=false
+BANDWIDTH_TIMEOUT=30
+BANDWIDTH_TEST_UPLOAD=false
+
 # HTTP/HTTPS test settings
 HTTP_TIMEOUT=10
 HTTP_USER_AGENT="netnoise/1.0"
@@ -113,6 +118,21 @@ DNS testing uses `dig` (preferred) or `nslookup` as fallback. The test measures:
 - IP addresses returned
 - Success/failure status
 
+### Bandwidth Testing Configuration
+
+Bandwidth testing can be configured with the following settings:
+
+- **`BANDWIDTH_ENABLED`**: Enable/disable bandwidth testing (default: `false`)
+- **`BANDWIDTH_TIMEOUT`**: Test timeout in seconds (default: `30`, range: 5-300)
+- **`BANDWIDTH_TEST_UPLOAD`**: Enable upload speed testing (default: `false`)
+
+Bandwidth testing uses `curl` (preferred) or `wget` as fallback. The test measures:
+- Download speed in Mbps
+- Upload speed in Mbps (if enabled)
+- Test duration and success/failure status
+
+**Note**: Bandwidth testing is disabled by default as it can consume significant bandwidth and time.
+
 ### Timer Configuration
 
 The monitoring interval is configurable via the `TIMER_INTERVAL` setting:
@@ -143,6 +163,23 @@ sudo systemctl status netnoise.timer
 
 # View logs
 sudo journalctl -u netnoise.service -f
+```
+
+### Enabling Bandwidth Testing
+
+To enable bandwidth testing, edit the configuration file:
+
+```bash
+# Edit configuration
+sudo nano /opt/netnoise/netnoise.conf
+
+# Enable bandwidth testing
+BANDWIDTH_ENABLED=true
+BANDWIDTH_TIMEOUT=30
+BANDWIDTH_TEST_UPLOAD=false  # Optional: enable upload testing
+
+# Restart service to apply changes
+sudo systemctl restart netnoise.timer
 ```
 
 ### Makefile Commands
@@ -190,6 +227,9 @@ sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq
 
 # View specific target results
 sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq '.[] | select(.target == "google.com")'
+
+# View bandwidth test results only
+sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq '.[] | select(.target == "google.com") | .bandwidth'
 ```
 
 ## Alerting
