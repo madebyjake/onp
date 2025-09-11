@@ -16,7 +16,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Test configuration
-TEST_TARGETS=("${TEST_TARGETS[@]:-google.com cloudflare.com}")
+TEST_TARGETS=("${TEST_TARGETS[@]:-google.com}" "cloudflare.com")
 
 log() {
     local level="$1"
@@ -53,6 +53,16 @@ test_dependencies() {
             missing_tools+=("$tool")
         fi
     done
+    
+    # Check for at least one DNS tool
+    local dns_tools_available=false
+    if command -v dig &> /dev/null || command -v nslookup &> /dev/null; then
+        dns_tools_available=true
+    fi
+    
+    if [ "$dns_tools_available" = false ]; then
+        missing_tools+=("dig or nslookup")
+    fi
     
     if [ ${#missing_tools[@]} -ne 0 ]; then
         log "ERROR" "Missing tools: ${missing_tools[*]}"
@@ -124,6 +134,32 @@ test_http() {
         log "WARN" "HTTP to $target failed (this may be expected)"
         return 1
     fi
+}
+
+test_dns() {
+    local target="$1"
+    log "INFO" "Testing DNS resolution for $target..."
+    
+    # Use a subshell to prevent exit on failure
+    local dns_result=""
+    if command -v dig &> /dev/null; then
+        if dns_result=$(dig +short +time=5 +tries=1 "$target" A 2>/dev/null); then
+            if [ -n "$dns_result" ] && [ "$dns_result" != "" ]; then
+                log "SUCCESS" "DNS resolution for $target successful (dig: $dns_result)"
+                return 0
+            fi
+        fi
+    elif command -v nslookup &> /dev/null; then
+        if dns_result=$(nslookup "$target" 2>/dev/null | grep -E 'Address: [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -1); then
+            if [ -n "$dns_result" ]; then
+                log "SUCCESS" "DNS resolution for $target successful (nslookup: $dns_result)"
+                return 0
+            fi
+        fi
+    fi
+    
+    log "WARN" "DNS resolution for $target failed (this may be expected)"
+    return 1
 }
 
 # Test systemd files
@@ -227,6 +263,18 @@ main() {
     # Test network connectivity
     log "INFO" "Starting network connectivity tests..."
     for target in "${TEST_TARGETS[@]}"; do
+        tests_total=$((tests_total + 1))
+        network_tests_total=$((network_tests_total + 1))
+        log "INFO" "Testing DNS resolution for $target..."
+        if test_dns "$target"; then
+            tests_passed=$((tests_passed + 1))
+            network_tests_passed=$((network_tests_passed + 1))
+            log "SUCCESS" "DNS test to $target passed"
+        else
+            log "WARN" "DNS test to $target failed (may be expected in CI)"
+        fi
+        echo
+        
         tests_total=$((tests_total + 1))
         network_tests_total=$((network_tests_total + 1))
         log "INFO" "Testing ping connectivity to $target..."
