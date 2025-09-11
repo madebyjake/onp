@@ -1,20 +1,15 @@
-# OpenNetProbe (ONP)
+# NetNoise
 
-A network monitoring utility that performs connectivity tests, traceroutes, and HTTP checks on a configurable list of targets. Runs as a systemd service with configurable scheduling to detect connection errors.
+NetNoise is a network troubleshooting utility that performs active connectivity testing across multiple protocols. It conducts ping, HTTP/HTTPS, and traceroute tests against configurable targets to help diagnose network issues and monitor connection health.
 
 ## Features
 
-- **Multi-protocol Testing**: Performs ping, HTTP/HTTPS, and traceroute tests
-- **Configurable Targets**: Supports hostnames, IP addresses, and URLs
-- **Logging**: Generates logs with timestamps and color-coded output
-- **JSON Results**: Outputs machine-readable results for monitoring system integration
-- **Alert System**: Sends email and webhook notifications on failures
-- **Systemd Integration**: Uses systemd timer for scheduling
-- **Resource Management**: Configurable timeouts and resource limits
-- **Log Rotation**: Automatically cleans up old logs and results
-- **Configuration Validation**: Comprehensive config validation with detailed error reporting
-- **Performance Monitoring**: Built-in performance tracking and resource monitoring
-- **Health Check Endpoint**: JSON health status file for monitoring integration
+- Multi-protocol testing (ping, HTTP/HTTPS, traceroute)
+- Configurable target lists and test parameters
+- Structured logging with JSON output
+- Email and webhook alerting
+- Systemd service integration
+- Automated scheduling and log management
 
 ## Quick Start
 
@@ -28,11 +23,11 @@ A network monitoring utility that performs connectivity tests, traceroutes, and 
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/madebyjake/onp.git
-   cd onp
+   git clone https://github.com/madebyjake/netnoise.git
+   cd netnoise
    ```
 
-2. **Install OpenNetProbe:**
+2. **Install netnoise:**
    ```bash
    sudo chmod +x install.sh
    sudo ./install.sh
@@ -40,12 +35,12 @@ A network monitoring utility that performs connectivity tests, traceroutes, and 
 
 3. **Configure targets:**
    ```bash
-   sudo nano /opt/onp/onp.conf
+   sudo nano /opt/netnoise/netnoise.conf
    ```
 
 4. **Start monitoring:**
    ```bash
-   sudo systemctl start onp.timer
+   sudo systemctl start netnoise.timer
    ```
 
 ### ⚠️ Security Reminder
@@ -54,7 +49,7 @@ A network monitoring utility that performs connectivity tests, traceroutes, and 
 
 ## Configuration
 
-Edit `/opt/onp/onp.conf` to configure monitoring:
+Edit `/opt/netnoise/netnoise.conf` to configure monitoring:
 
 ```bash
 # Add targets to monitor
@@ -85,7 +80,7 @@ TRACEROUTE_TIMEOUT=5
 
 # HTTP/HTTPS test settings
 HTTP_TIMEOUT=10
-HTTP_USER_AGENT="OpenNetProbe (ONP)/1.0"
+HTTP_USER_AGENT="netnoise/1.0"
 
 # Alert settings
 ALERT_ON_FAILURE=true
@@ -123,21 +118,21 @@ make regenerate
 
 ```bash
 # Start/stop/restart monitoring
-sudo systemctl start onp.timer
-sudo systemctl stop onp.timer
-sudo systemctl restart onp.timer
+sudo systemctl start netnoise.timer
+sudo systemctl stop netnoise.timer
+sudo systemctl restart netnoise.timer
 
 # Check status
-sudo systemctl status onp.timer
+sudo systemctl status netnoise.timer
 
 # View logs
-sudo journalctl -u onp.service -f
+sudo journalctl -u netnoise.service -f
 ```
 
 ### Makefile Commands
 
 ```bash
-make install     # Install OpenNetProbe
+make install     # Install netnoise
 make test        # Run test suite
 make status      # Check service status
 make start       # Start monitoring
@@ -145,7 +140,7 @@ make stop        # Stop monitoring
 make restart     # Restart monitoring
 make logs        # View recent logs
 make config      # Edit configuration
-make check    # Validate configuration
+make check       # Validate configuration
 make health      # Show health status
 make version     # Show version information
 make clean       # Clean old logs
@@ -160,13 +155,13 @@ make check  # Validate configuration
 
 **Performance Monitoring:**
 - Operation timing and resource usage tracking
-- Performance logs: `logs/onp-performance-YYYYMMDD.log`
+- Performance logs: `logs/netnoise-performance-YYYYMMDD.log`
 
 **Health Check:**
 ```bash
 make health  # Show health status
 ```
-Health data is stored in `/opt/onp/health.json` for monitoring integration.
+Health data is stored in `/opt/netnoise/health.json` for monitoring integration.
 
 ### Viewing Results
 
@@ -175,15 +170,15 @@ Health data is stored in `/opt/onp/health.json` for monitoring integration.
 make logs
 
 # View JSON results
-sudo cat /opt/onp/results/onp-results-$(date +%Y%m%d).json | jq
+sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq
 
 # View specific target results
-sudo cat /opt/onp/results/onp-results-$(date +%Y%m%d).json | jq '.[] | select(.target == "google.com")'
+sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq '.[] | select(.target == "google.com")'
 ```
 
 ## Alerting
 
-Configure alerts in `onp.conf`:
+Configure alerts in `netnoise.conf`:
 
 - **Email alerts**: Set `ALERT_EMAIL` (requires `mail` command)
 - **Webhook alerts**: Set `ALERT_WEBHOOK` for HTTP POST endpoints (Slack, Discord, etc.)
@@ -193,7 +188,7 @@ Configure alerts in `onp.conf`:
 - **Always review scripts before running with sudo/root privileges**
 - Service runs as root to access network tools (ping, traceroute)
 - Logs may contain sensitive network information
-- Keep installation directory (`/opt/onp`) secure
+- Keep installation directory (`/opt/netnoise`) secure
 - Use strong authentication for alert webhooks
 
 ## Troubleshooting
@@ -213,16 +208,16 @@ brew install traceroute curl jq bc
 **Service Issues:**
 ```bash
 # Check status
-sudo systemctl status onp.timer
+sudo systemctl status netnoise.timer
 
 # Check logs
-sudo journalctl -u onp.service -n 50
+sudo journalctl -u netnoise.service -n 50
 
 # Test manually
-sudo /opt/onp/onp.sh
+sudo /opt/netnoise/netnoise.sh
 
 # Debug mode
-sudo bash -x /opt/onp/onp.sh
+sudo bash -x /opt/netnoise/netnoise.sh
 ```
 
 ## Uninstallation
