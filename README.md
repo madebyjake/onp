@@ -1,10 +1,10 @@
 # NetNoise
 
-NetNoise is a network troubleshooting utility that performs active connectivity testing across multiple protocols. It conducts ping, HTTP/HTTPS, and traceroute tests against configurable targets to help diagnose network issues and monitor connection health.
+NetNoise is a network troubleshooting utility that performs active connectivity testing across multiple protocols. It conducts DNS resolution, ping, HTTP/HTTPS, and traceroute tests against configurable targets to help diagnose network issues and monitor connection health.
 
 ## Features
 
-- Multi-protocol testing (ping, HTTP/HTTPS, traceroute)
+- Multi-protocol testing (DNS resolution, ping, HTTP/HTTPS, traceroute)
 - Configurable target lists and test parameters
 - Structured logging with JSON output
 - Email and webhook alerting
@@ -17,7 +17,7 @@ NetNoise is a network troubleshooting utility that performs active connectivity 
 
 - Linux system with systemd
 - Root or sudo access
-- Required tools: `ping`, `traceroute`, `curl`, `jq`, `bc`
+- Required tools: `ping`, `traceroute`, `curl`, `jq`, `bc`, `dig` or `nslookup`
 
 ### Installation
 
@@ -78,6 +78,10 @@ PING_TIMEOUT=10
 TRACEROUTE_MAX_HOPS=30
 TRACEROUTE_TIMEOUT=5
 
+# DNS resolution test settings
+DNS_TIMEOUT=5
+DNS_ENABLED=true
+
 # HTTP/HTTPS test settings
 HTTP_TIMEOUT=10
 HTTP_USER_AGENT="netnoise/1.0"
@@ -96,6 +100,18 @@ TIMER_INTERVAL="hourly"
 # Log retention (days)
 LOG_RETENTION_DAYS=30
 ```
+
+### DNS Testing Configuration
+
+DNS resolution testing can be configured with the following settings:
+
+- **`DNS_ENABLED`**: Enable/disable DNS testing (default: `true`)
+- **`DNS_TIMEOUT`**: DNS query timeout in seconds (default: `5`, range: 1-60)
+
+DNS testing uses `dig` (preferred) or `nslookup` as fallback. The test measures:
+- DNS resolution time
+- IP addresses returned
+- Success/failure status
 
 ### Timer Configuration
 
@@ -196,10 +212,10 @@ Configure alerts in `netnoise.conf`:
 **Missing Dependencies:**
 ```bash
 # Ubuntu/Debian
-sudo apt-get install traceroute curl jq bc
+sudo apt-get install traceroute curl jq bc dnsutils
 
 # CentOS/RHEL
-sudo yum install traceroute curl jq bc
+sudo yum install traceroute curl jq bc bind-utils
 
 # macOS
 brew install traceroute curl jq bc
