@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# OpenNetProbe (ONP) - Network Monitoring Script
+# netnoise - Network Monitoring Script
 # Monitors connectivity and performs traceroutes to detect network issues
 # Runs as a systemd service with configurable timer
 
@@ -13,12 +13,12 @@ GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="${SCRIPT_DIR}/onp.conf"
+CONFIG_FILE="${SCRIPT_DIR}/netnoise.conf"
 LOG_DIR="${SCRIPT_DIR}/logs"
-LOG_FILE="${LOG_DIR}/onp-$(date +%Y%m%d).log"
+LOG_FILE="${LOG_DIR}/netnoise-$(date +%Y%m%d).log"
 RESULTS_DIR="${SCRIPT_DIR}/results"
-RESULTS_FILE="${RESULTS_DIR}/onp-results-$(date +%Y%m%d).json"
-PERFORMANCE_LOG="${LOG_DIR}/onp-performance-$(date +%Y%m%d).log"
+RESULTS_FILE="${RESULTS_DIR}/netnoise-results-$(date +%Y%m%d).json"
+PERFORMANCE_LOG="${LOG_DIR}/netnoise-performance-$(date +%Y%m%d).log"
 HEALTH_FILE="${SCRIPT_DIR}/health.json"
 
 # Colors for output
@@ -314,7 +314,7 @@ load_config() {
 # Create default configuration file
 create_default_config() {
     cat > "$CONFIG_FILE" << 'EOF'
-# ONP Configuration File
+# netnoise Configuration File
 # Add targets to monitor (one per line)
 # Format: TARGETS=("hostname1" "hostname2" "ip_address" "https://example.com")
 
@@ -336,7 +336,7 @@ TRACEROUTE_TIMEOUT=5
 
 # HTTP/HTTPS test settings
 HTTP_TIMEOUT=10
-HTTP_USER_AGENT="OpenNetProbe (ONP)/1.0"
+HTTP_USER_AGENT="netnoise/1.0"
 
 # Alert settings
 ALERT_ON_FAILURE=true
@@ -522,7 +522,7 @@ test_target() {
     mkdir -p "$RESULTS_DIR"
     
     # Start JSON result for this target
-    local result_file="/tmp/onp_result_$$.json"
+    local result_file="/tmp/netnoise_result_$$.json"
     echo "{" > "$result_file"
     echo "  \"target\": \"$target\"," >> "$result_file"
     echo "  \"timestamp\": \"$timestamp\"," >> "$result_file"
@@ -598,7 +598,7 @@ send_alert() {
         
         # Email alert (if configured)
         if [ -n "${ALERT_EMAIL:-}" ] && command -v mail &> /dev/null; then
-            echo "$message" | mail -s "ONP Alert" "$ALERT_EMAIL"
+            echo "$message" | mail -s "netnoise Alert" "$ALERT_EMAIL"
             log "INFO" "Alert email sent to $ALERT_EMAIL"
         fi
         
@@ -636,7 +636,7 @@ cleanup_old_logs() {
 # Show help information
 show_help() {
     cat << EOF
-OpenNetProbe (ONP) v${VERSION} - Network Monitoring Tool
+netnoise v${VERSION} - Network Monitoring Tool
 
 USAGE:
     $0 [OPTIONS]
@@ -655,14 +655,14 @@ EXAMPLES:
     $0 --check         # Check configuration and exit
     $0 --version       # Show version information
 
-For more information, see: https://github.com/madebyjake/onp
+For more information, see: https://github.com/madebyjake/netnoise
 EOF
 }
 
 # Show version information
 show_version() {
     cat << EOF
-OpenNetProbe (ONP) v${VERSION}
+netnoise v${VERSION}
 Build Date: ${BUILD_DATE}
 Git Commit: ${GIT_COMMIT}
 EOF
@@ -696,7 +696,7 @@ main() {
             ;;
     esac
 
-    log "INFO" "ONP v${VERSION} starting - $(date)"
+    log "INFO" "netnoise v${VERSION} starting - $(date)"
     
     # Update health status
     update_health_status "starting"
@@ -771,7 +771,7 @@ main() {
     
     if [ $failed_count -gt 0 ]; then
         log "ERROR" "Failed targets: ${failed_targets[*]}"
-        send_alert "ONP detected $failed_count failed targets: ${failed_targets[*]}"
+        send_alert "netnoise detected $failed_count failed targets: ${failed_targets[*]}"
         update_health_status "failed"
         exit 1
     else
