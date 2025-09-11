@@ -1,10 +1,10 @@
 # NetNoise
 
-NetNoise is a network troubleshooting utility that performs active connectivity testing across multiple protocols. It conducts DNS resolution, ping, bandwidth, HTTP/HTTPS, and traceroute tests against configurable targets to help diagnose network issues and monitor connection health.
+NetNoise is a network troubleshooting utility that performs active connectivity testing across multiple protocols. It conducts DNS resolution, ping, bandwidth, port scanning, HTTP/HTTPS, and traceroute tests against configurable targets to help diagnose network issues and monitor connection health.
 
 ## Features
 
-- Multi-protocol testing (DNS resolution, ping, bandwidth, HTTP/HTTPS, traceroute)
+- Multi-protocol testing (DNS resolution, ping, bandwidth, port scanning, HTTP/HTTPS, traceroute)
 - Configurable target lists and test parameters
 - Structured logging with JSON output
 - Email and webhook alerting
@@ -87,6 +87,11 @@ BANDWIDTH_ENABLED=false
 BANDWIDTH_TIMEOUT=30
 BANDWIDTH_TEST_UPLOAD=false
 
+# Port scanning test settings
+PORT_SCAN_ENABLED=false
+PORT_SCAN_TIMEOUT=5
+PORT_SCAN_PORTS="22,80,443,25,53,110,143,993,995"
+
 # HTTP/HTTPS test settings
 HTTP_TIMEOUT=10
 HTTP_USER_AGENT="netnoise/1.0"
@@ -133,6 +138,32 @@ Bandwidth testing uses `curl` (preferred) or `wget` as fallback. The test measur
 
 **Note**: Bandwidth testing is disabled by default as it can consume significant bandwidth and time.
 
+### Port Scanning Configuration
+
+Port scanning can be configured with the following settings:
+
+- **`PORT_SCAN_ENABLED`**: Enable/disable port scanning (default: `false`)
+- **`PORT_SCAN_TIMEOUT`**: Connection timeout per port in seconds (default: `5`, range: 1-30)
+- **`PORT_SCAN_PORTS`**: Comma-separated list of ports to scan (default: `"22,80,443,25,53,110,143,993,995"`)
+
+Port scanning uses `nc` (netcat) as the preferred method or `/dev/tcp` as fallback. The test measures:
+- Open ports on the target host
+- Connection success/failure for each port
+- Total scan duration and statistics
+
+**Common Ports:**
+- **22**: SSH
+- **80**: HTTP
+- **443**: HTTPS
+- **25**: SMTP
+- **53**: DNS
+- **110**: POP3
+- **143**: IMAP
+- **993**: IMAPS
+- **995**: POP3S
+
+**Note**: Port scanning is disabled by default as it can be seen as intrusive by some network administrators.
+
 ### Timer Configuration
 
 The monitoring interval is configurable via the `TIMER_INTERVAL` setting:
@@ -177,6 +208,23 @@ sudo nano /opt/netnoise/netnoise.conf
 BANDWIDTH_ENABLED=true
 BANDWIDTH_TIMEOUT=30
 BANDWIDTH_TEST_UPLOAD=false  # Optional: enable upload testing
+
+# Restart service to apply changes
+sudo systemctl restart netnoise.timer
+```
+
+### Enabling Port Scanning
+
+To enable port scanning, edit the configuration file:
+
+```bash
+# Edit configuration
+sudo nano /opt/netnoise/netnoise.conf
+
+# Enable port scanning
+PORT_SCAN_ENABLED=true
+PORT_SCAN_TIMEOUT=5
+PORT_SCAN_PORTS="22,80,443,25,53"  # Customize ports as needed
 
 # Restart service to apply changes
 sudo systemctl restart netnoise.timer
@@ -230,6 +278,9 @@ sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq '.[] |
 
 # View bandwidth test results only
 sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq '.[] | select(.target == "google.com") | .bandwidth'
+
+# View port scanning results only
+sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq '.[] | select(.target == "google.com") | .ports'
 ```
 
 ## Alerting
