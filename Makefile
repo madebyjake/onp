@@ -1,7 +1,7 @@
 # netnoise Makefile
 # Provides commands for managing netnoise
 
-.PHONY: help install uninstall test clean status start stop restart logs regenerate check health version config manual info lint format validate deps setup dev
+.PHONY: help install uninstall upgrade test clean status start stop restart logs regenerate check health version config manual info lint format validate deps setup dev
 
 # Default target
 help:
@@ -11,6 +11,7 @@ help:
 	@echo "Available targets:"
 	@echo "  install     - Install netnoise systemd service"
 	@echo "  uninstall   - Remove netnoise completely"
+	@echo "  upgrade     - Upgrade netnoise to latest version"
 	@echo "  test        - Run test suite"
 	@echo "  clean       - Clean up logs and results"
 	@echo "  status      - Show service status"
@@ -42,6 +43,25 @@ install:
 uninstall:
 	@echo "Uninstalling netnoise..."
 	sudo ./install.sh uninstall
+
+# Upgrade netnoise
+upgrade:
+	@echo "Upgrading netnoise..."
+	@echo "Stopping netnoise services..."
+	@sudo systemctl stop netnoise.timer 2>/dev/null || true
+	@sudo systemctl stop netnoise.service 2>/dev/null || true
+	@echo "Backing up current configuration..."
+	@sudo cp /opt/netnoise/netnoise.conf /opt/netnoise/netnoise.conf.backup 2>/dev/null || true
+	@echo "Pulling latest changes..."
+	@git pull origin main
+	@echo "Reinstalling netnoise..."
+	@sudo ./install.sh
+	@echo "Restoring configuration..."
+	@sudo cp /opt/netnoise/netnoise.conf.backup /opt/netnoise/netnoise.conf 2>/dev/null || true
+	@echo "Starting netnoise services..."
+	@sudo systemctl start netnoise.timer
+	@echo "Upgrade completed successfully!"
+	@echo "Run 'make status' to verify everything is working."
 
 # Run test suite
 test:
