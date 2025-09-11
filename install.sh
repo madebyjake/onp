@@ -119,6 +119,13 @@ install_files() {
     cp "$script_dir/netnoise.sh" "$INSTALL_DIR/"
     cp "$script_dir/netnoise.conf" "$INSTALL_DIR/"
     
+    # Copy modules directory if it exists
+    if [ -d "$script_dir/modules" ]; then
+        cp -r "$script_dir/modules" "$INSTALL_DIR/"
+        chmod +x "$INSTALL_DIR/modules"/*.sh
+        log "INFO" "Modules directory copied and made executable"
+    fi
+    
     # Make script executable
     chmod +x "$INSTALL_DIR/netnoise.sh"
     
@@ -134,6 +141,7 @@ generate_timer() {
     local timer_file="/etc/systemd/system/netnoise.timer"
     
     # Load configuration
+    # shellcheck source=/dev/null
     source "$config_file"
     
     # Default timer interval
