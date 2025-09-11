@@ -1,5 +1,5 @@
 [Unit]
-Description=OpenNetProbe (ONP) Timer
+Description=OpenNetProbe Timer
 Documentation=https://github.com/madebyjake/onp
 Requires=onp.service
 

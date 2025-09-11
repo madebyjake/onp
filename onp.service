@@ -1,5 +1,5 @@
 [Unit]
-Description=OpenNetProbe (ONP) Service
+Description=OpenNetProbe Service
 Documentation=https://github.com/madebyjake/onp
 After=network-online.target
 Wants=network-online.target
@@ -12,7 +12,7 @@ WorkingDirectory=/opt/onp
 ExecStart=/opt/onp/onp.sh
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=netprobe
+SyslogIdentifier=onp
 
 # Security settings
 NoNewPrivileges=true
