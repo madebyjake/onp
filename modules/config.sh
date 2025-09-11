@@ -256,56 +256,79 @@ create_default_config() {
 # Format: TARGETS=("hostname1" "hostname2" "ip_address" "https://example.com")
 
 TARGETS=(
-    "google.com"
-    "cloudflare.com"
-    "github.com"
-    "stackoverflow.com"
-    "example.com"
+    # Core Internet Infrastructure
+    "google.com"                # Global search/CDN
+    "cloudflare.com"            # Major CDN/DNS provider
+    "1.1.1.1"                   # Cloudflare DNS (IPv4)
+    "8.8.8.8"                   # Google DNS (IPv4)
+    
+    # DNS Root Servers
+    "a.root-servers.net"        # Root DNS server A
+    "b.root-servers.net"        # Root DNS server B
+    
+    # Global Services
+    "amazon.com"                # Global e-commerce/CDN
+    "microsoft.com"             # Enterprise services
+    "github.com"                # Developer platform
+    "wikipedia.org"             # Global knowledge base
+    
+    # CDN Providers
+    "fastly.com"                # Major CDN provider
+    "akamai.com"                # Major CDN provider
+    
+    # Network Infrastructure
+    "level3.net"                # Major backbone provider
+    "he.net"                    # Hurricane Electric (global ISP)
+    "cogentco.com"              # Major backbone provider
+    "ntt.net"                   # Global backbone provider
+    
+    # Time Services
+    "time.nist.gov"             # NTP time server
 )
 
-# Ping settings
-PING_COUNT=4
-PING_TIMEOUT=10
+# Ping settings - Basic connectivity testing
+PING_COUNT=4                    # Number of ping packets to send
+PING_TIMEOUT=10                 # Timeout per ping in seconds
 
-# Traceroute settings
-TRACEROUTE_MAX_HOPS=30
-TRACEROUTE_TIMEOUT=5
+# Traceroute settings - Network path discovery
+TRACEROUTE_MAX_HOPS=30          # Maximum number of hops to trace
+TRACEROUTE_TIMEOUT=5            # Timeout per hop in seconds
 
-# DNS resolution test settings
-DNS_TIMEOUT=5
-DNS_ENABLED=true
+# DNS resolution test settings - Name resolution testing
+DNS_TIMEOUT=5                   # DNS query timeout in seconds
+DNS_ENABLED=true                # Enable DNS resolution tests
 
-# Bandwidth test settings
-BANDWIDTH_ENABLED=false
-BANDWIDTH_TIMEOUT=30
-BANDWIDTH_TEST_UPLOAD=false
+# Bandwidth test settings - Network performance testing (resource intensive)
+BANDWIDTH_ENABLED=false         # Enable bandwidth testing
+BANDWIDTH_TIMEOUT=30            # Bandwidth test timeout in seconds
+BANDWIDTH_TEST_UPLOAD=false     # Include upload speed testing
 
-# Port scanning test settings
-PORT_SCAN_ENABLED=false
-PORT_SCAN_TIMEOUT=5
-PORT_SCAN_PORTS="22,80,443,25,53,110,143,993,995"
+# Port scanning test settings - Service availability testing (security sensitive)
+PORT_SCAN_ENABLED=false         # Enable port scanning
+PORT_SCAN_TIMEOUT=5             # Port scan timeout in seconds
+PORT_SCAN_PORTS="22,80,443,25,53,110,143,993,995"  # Ports to scan
 
-# MTU discovery test settings
-MTU_ENABLED=false
-MTU_TIMEOUT=5
-MTU_MIN=576
-MTU_MAX=1500
-MTU_STEP=10
+# MTU discovery test settings - Maximum transmission unit testing
+MTU_ENABLED=false               # Enable MTU discovery
+MTU_TIMEOUT=5                   # MTU test timeout in seconds
+MTU_MIN=576                     # Minimum MTU to test (bytes)
+MTU_MAX=1500                    # Maximum MTU to test (bytes)
+MTU_STEP=10                     # MTU test step size (bytes)
 
-# HTTP/HTTPS test settings
-HTTP_TIMEOUT=10
-HTTP_USER_AGENT="netnoise/1.0"
+# HTTP/HTTPS test settings - Web service connectivity
+HTTP_TIMEOUT=10                 # HTTP request timeout in seconds
+HTTP_USER_AGENT="netnoise/1.0"  # User agent string for HTTP requests
 
-# Alert settings
-ALERT_ON_FAILURE=true
-ALERT_EMAIL=""
-ALERT_WEBHOOK=""
+# Alert settings - Notification configuration
+ALERT_ON_FAILURE=true           # Send alerts when tests fail
+ALERT_EMAIL=""                  # Email address for alerts (optional)
+ALERT_WEBHOOK=""                # Webhook URL for alerts (optional)
 
-# Log retention (days)
-LOG_RETENTION_DAYS=30
+# Log retention settings - Log management
+LOG_RETENTION_DAYS=30           # Days to retain log files
 
-# Timer interval (for systemd service)
-TIMER_INTERVAL=hourly
+# Timer settings - Service scheduling
+TIMER_INTERVAL="hourly"         # How often to run tests
 EOF
     log "INFO" "Default configuration created at $CONFIG_FILE"
     log "INFO" "Please edit the configuration file to add your monitoring targets"
