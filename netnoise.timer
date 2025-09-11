@@ -1,7 +1,7 @@
 [Unit]
-Description=OpenNetProbe (ONP) Timer
-Documentation=https://github.com/madebyjake/onp
-Requires=onp.service
+Description=netnoise Timer
+Documentation=https://github.com/madebyjake/netnoise
+Requires=netnoise.service
 
 [Timer]
 # Run based on configured interval

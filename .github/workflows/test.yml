@@ -1,8 +1,8 @@
-name: Test ONP
+name: Test NetNoise
 
 on:
   push:
-    branches: [ main, dev, ci/testing-workflow ]
+    branches: [ main, dev]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -28,31 +28,31 @@ jobs:
     - name: Test script syntax
       run: |
         echo "Testing BASH syntax..."
-        bash -n onp.sh
+        bash -n netnoise.sh
         bash -n install.sh
         bash -n test.sh
 
     - name: Run ShellCheck
       run: |
-        shellcheck onp.sh || true
+        shellcheck netnoise.sh || true
         shellcheck install.sh || true
         shellcheck test.sh || true
 
     - name: Test configuration loading
       run: |
         echo "Testing configuration file syntax..."
-        bash -c "source onp.conf && echo 'Configuration loaded successfully'"
+        bash -c "source netnoise.conf && echo 'Configuration loaded successfully'"
         
         echo "Validating configuration variables..."
-        bash -c "source onp.conf && echo 'Targets: ${#TARGETS[@]}'"
+        bash -c "source netnoise.conf && echo 'Targets: ${#TARGETS[@]}'"
 
     - name: Test systemd files
       run: |
         echo "Validating systemd service file..."
-        systemd-analyze verify onp.service || echo "Service file validation completed"
+        systemd-analyze verify netnoise.service || echo "Service file validation completed"
         
         echo "Validating systemd timer file..."
-        systemd-analyze verify onp.timer || echo "Timer file validation completed"
+        systemd-analyze verify netnoise.timer || echo "Timer file validation completed"
 
     - name: Test network connectivity
       run: |
@@ -110,7 +110,7 @@ jobs:
     - name: Lint shell scripts
       run: |
         echo "Running ShellCheck on all shell scripts..."
-        shellcheck onp.sh || echo "ShellCheck completed for onp.sh"
+        shellcheck netnoise.sh || echo "ShellCheck completed for netnoise.sh"
         shellcheck install.sh || echo "ShellCheck completed for install.sh"
         shellcheck test.sh || echo "ShellCheck completed for test.sh"
 
@@ -144,7 +144,7 @@ jobs:
     - name: Validate systemd security
       run: |
         echo "Checking systemd service security settings..."
-        grep -A 10 "Security settings" onp.service || echo "Security settings found"
+        grep -A 10 "Security settings" netnoise.service || echo "Security settings found"
 
   documentation:
     runs-on: ubuntu-latest
@@ -160,7 +160,7 @@ jobs:
         wc -l README.md
         
         echo "Checking for required sections..."
-        grep -q "# OpenNetProbe" README.md && echo "Title found"
+        grep -q "# NetNoise" README.md && echo "Title found"
         grep -q "## Features" README.md && echo "Features section found"
         grep -q "## Installation" README.md && echo "Installation section found"
         grep -q "## Configuration" README.md && echo "Configuration section found"
@@ -182,19 +182,19 @@ jobs:
       run: |
         echo "Testing installation process..."
         mkdir -p /tmp/test-install
-        cp onp.sh /tmp/test-install/
-        cp onp.conf /tmp/test-install/
-        cp onp.service /tmp/test-install/
-        cp onp.timer /tmp/test-install/
+        cp netnoise.sh /tmp/test-install/
+        cp netnoise.conf /tmp/test-install/
+        cp netnoise.service /tmp/test-install/
+        cp netnoise.timer /tmp/test-install/
         echo "Installation simulation completed"
 
     - name: Validate project structure
       run: |
         echo "Checking project structure..."
-        test -f onp.sh && echo "✓ onp.sh"
-        test -f onp.conf && echo "✓ onp.conf"
-        test -f onp.service && echo "✓ onp.service"
-        test -f onp.timer && echo "✓ onp.timer"
+        test -f netnoise.sh && echo "✓ netnoise.sh"
+        test -f netnoise.conf && echo "✓ netnoise.conf"
+        test -f netnoise.service && echo "✓ netnoise.service"
+        test -f netnoise.timer && echo "✓ netnoise.timer"
         test -f install.sh && echo "✓ install.sh"
         test -f test.sh && echo "✓ test.sh"
         test -f Makefile && echo "✓ Makefile"

@@ -1,6 +1,6 @@
 [Unit]
-Description=OpenNetProbe (ONP) Service
-Documentation=https://github.com/madebyjake/onp
+Description=netnoise Service
+Documentation=https://github.com/madebyjake/netnoise
 After=network-online.target
 Wants=network-online.target
 
@@ -8,18 +8,18 @@ Wants=network-online.target
 Type=oneshot
 User=root
 Group=root
-WorkingDirectory=/opt/onp
-ExecStart=/opt/onp/onp.sh
+WorkingDirectory=/opt/netnoise
+ExecStart=/opt/netnoise/netnoise.sh
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=netprobe
+SyslogIdentifier=netnoise
 
 # Security settings
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/onp /tmp
+ReadWritePaths=/opt/netnoise /tmp
 
 # Resource limits
 MemoryMax=256M
