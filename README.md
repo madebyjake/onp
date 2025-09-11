@@ -1,10 +1,10 @@
 # NetNoise
 
-NetNoise is a network troubleshooting utility that performs active connectivity testing across multiple protocols. It conducts DNS resolution, ping, bandwidth, port scanning, HTTP/HTTPS, and traceroute tests against configurable targets to help diagnose network issues and monitor connection health.
+NetNoise is a network troubleshooting utility that performs active connectivity testing across multiple protocols. It conducts DNS resolution, ping, bandwidth, port scanning, MTU discovery, HTTP/HTTPS, and traceroute tests against configurable targets to help diagnose network issues and monitor connection health.
 
 ## Features
 
-- Multi-protocol testing (DNS resolution, ping, bandwidth, port scanning, HTTP/HTTPS, traceroute)
+- Multi-protocol testing (DNS resolution, ping, bandwidth, port scanning, MTU discovery, HTTP/HTTPS, traceroute)
 - Configurable target lists and test parameters
 - Structured logging with JSON output
 - Email and webhook alerting
@@ -92,6 +92,13 @@ PORT_SCAN_ENABLED=false
 PORT_SCAN_TIMEOUT=5
 PORT_SCAN_PORTS="22,80,443,25,53,110,143,993,995"
 
+# MTU discovery test settings
+MTU_ENABLED=false
+MTU_TIMEOUT=5
+MTU_MIN=576
+MTU_MAX=1500
+MTU_STEP=10
+
 # HTTP/HTTPS test settings
 HTTP_TIMEOUT=10
 HTTP_USER_AGENT="netnoise/1.0"
@@ -164,6 +171,29 @@ Port scanning uses `nc` (netcat) as the preferred method or `/dev/tcp` as fallba
 
 **Note**: Port scanning is disabled by default as it can be seen as intrusive by some network administrators.
 
+### MTU Discovery Configuration
+
+MTU discovery can be configured with the following settings:
+
+- **`MTU_ENABLED`**: Enable/disable MTU discovery (default: `false`)
+- **`MTU_TIMEOUT`**: Per-test timeout in seconds (default: `5`, range: 1-30)
+- **`MTU_MIN`**: Minimum MTU to test in bytes (default: `576`, range: 68-9000)
+- **`MTU_MAX`**: Maximum MTU to test in bytes (default: `1500`, range: 68-9000)
+- **`MTU_STEP`**: Step size for binary search in bytes (default: `10`, range: 1-100)
+
+MTU discovery uses `ping -M do` (Don't Fragment) with binary search algorithm. The test measures:
+- Optimal MTU size for the network path
+- Number of tests performed during discovery
+- Total discovery time and success/failure status
+
+**How it works:**
+1. Uses binary search between MTU_MIN and MTU_MAX
+2. Tests each MTU size with `ping -M do -s <payload_size>`
+3. Finds the largest MTU that doesn't require fragmentation
+4. Reports the optimal MTU size for the network path
+
+**Note**: MTU discovery is disabled by default as it can be time-consuming and may generate significant network traffic.
+
 ### Timer Configuration
 
 The monitoring interval is configurable via the `TIMER_INTERVAL` setting:
@@ -230,6 +260,25 @@ PORT_SCAN_PORTS="22,80,443,25,53"  # Customize ports as needed
 sudo systemctl restart netnoise.timer
 ```
 
+### Enabling MTU Discovery
+
+To enable MTU discovery, edit the configuration file:
+
+```bash
+# Edit configuration
+sudo nano /opt/netnoise/netnoise.conf
+
+# Enable MTU discovery
+MTU_ENABLED=true
+MTU_TIMEOUT=5
+MTU_MIN=576
+MTU_MAX=1500
+MTU_STEP=10
+
+# Restart service to apply changes
+sudo systemctl restart netnoise.timer
+```
+
 ### Makefile Commands
 
 ```bash
@@ -281,6 +330,9 @@ sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq '.[] |
 
 # View port scanning results only
 sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq '.[] | select(.target == "google.com") | .ports'
+
+# View MTU discovery results only
+sudo cat /opt/netnoise/results/netnoise-results-$(date +%Y%m%d).json | jq '.[] | select(.target == "google.com") | .mtu'
 ```
 
 ## Alerting

@@ -235,6 +235,49 @@ test_ports() {
     fi
 }
 
+test_mtu() {
+    local target="$1"
+    log "INFO" "Testing MTU discovery to $target..."
+    
+    # Extract hostname from URL if needed
+    local hostname="$target"
+    if [[ "$target" =~ ^https?:// ]]; then
+        hostname=$(echo "$target" | sed 's|^https\?://||' | cut -d'/' -f1)
+    fi
+    
+    # Test with a simple MTU discovery (test 1500 and 576)
+    local test_mtus=(1500 576)
+    local found_mtu=0
+    
+    for mtu in "${test_mtus[@]}"; do
+        local payload_size=$((mtu - 28))  # Subtract IP and ICMP headers
+        
+        # Test with ping Don't Fragment flag (detect OS)
+        local ping_cmd="ping -c 1 -s $payload_size -W 3"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS uses -D for Don't Fragment
+            ping_cmd="$ping_cmd -D"
+        else
+            # Linux uses -M do for Don't Fragment
+            ping_cmd="$ping_cmd -M do"
+        fi
+        
+        if timeout 3 $ping_cmd "$hostname" &>/dev/null; then
+            found_mtu=$mtu
+            log "SUCCESS" "MTU $mtu bytes successful on $hostname"
+            break
+        fi
+    done
+    
+    if [ $found_mtu -gt 0 ]; then
+        log "SUCCESS" "MTU test to $target successful (found MTU: $found_mtu bytes)"
+        return 0
+    else
+        log "WARN" "MTU test to $target failed (no valid MTU found)"
+        return 1
+    fi
+}
+
 # Test systemd files
 test_systemd() {
     log "INFO" "Testing systemd files..."
@@ -381,6 +424,18 @@ main() {
             log "SUCCESS" "Port test to $target passed"
         else
             log "WARN" "Port test to $target failed (may be expected in CI)"
+        fi
+        echo
+        
+        tests_total=$((tests_total + 1))
+        network_tests_total=$((network_tests_total + 1))
+        log "INFO" "Testing MTU discovery to $target..."
+        if test_mtu "$target"; then
+            tests_passed=$((tests_passed + 1))
+            network_tests_passed=$((network_tests_passed + 1))
+            log "SUCCESS" "MTU test to $target passed"
+        else
+            log "WARN" "MTU test to $target failed (may be expected in CI)"
         fi
         echo
         
