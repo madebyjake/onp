@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# OpenNetProbe (ONP) Installation Script
-# Installs ONP as a systemd service with configurable monitoring
+# netnoise Installation Script
+# Installs netnoise as a systemd service with configurable monitoring
 
 set -euo pipefail
 
@@ -18,7 +18,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-INSTALL_DIR="/opt/onp"
+INSTALL_DIR="/opt/netnoise"
 SERVICE_USER="root"
 SERVICE_GROUP="root"
 
@@ -111,16 +111,16 @@ create_directories() {
 
 # Install files
 install_files() {
-    log "INFO" "Installing OpenNetProbe files..."
+    log "INFO" "Installing netnoise files..."
     
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
     # Copy script files
-    cp "$script_dir/onp.sh" "$INSTALL_DIR/"
-    cp "$script_dir/onp.conf" "$INSTALL_DIR/"
+    cp "$script_dir/netnoise.sh" "$INSTALL_DIR/"
+    cp "$script_dir/netnoise.conf" "$INSTALL_DIR/"
     
     # Make script executable
-    chmod +x "$INSTALL_DIR/onp.sh"
+    chmod +x "$INSTALL_DIR/netnoise.sh"
     
     # Set ownership
     chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR"
@@ -130,8 +130,8 @@ install_files() {
 
 # Generate systemd timer based on configuration
 generate_timer() {
-    local config_file="$INSTALL_DIR/onp.conf"
-    local timer_file="/etc/systemd/system/onp.timer"
+    local config_file="$INSTALL_DIR/netnoise.conf"
+    local timer_file="/etc/systemd/system/netnoise.timer"
     
     # Load configuration
     source "$config_file"
@@ -142,9 +142,9 @@ generate_timer() {
     # Generate timer file
     cat > "$timer_file" << EOF
 [Unit]
-Description=OpenNetProbe (ONP) Network Monitoring Timer
-Documentation=https://github.com/madebyjake/onp
-Requires=onp.service
+Description=netnoise Network Monitoring Timer
+Documentation=https://github.com/madebyjake/netnoise
+Requires=netnoise.service
 
 [Timer]
 # Run based on configured interval
@@ -170,7 +170,7 @@ install_systemd() {
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
     # Copy service file
-    cp "$script_dir/onp.service" "/etc/systemd/system/"
+    cp "$script_dir/netnoise.service" "/etc/systemd/system/"
     
     # Generate timer file based on configuration
     generate_timer
@@ -179,7 +179,7 @@ install_systemd() {
     systemctl daemon-reload
     
     # Enable timer (but don't start yet)
-    systemctl enable onp.timer
+    systemctl enable netnoise.timer
     
     log "SUCCESS" "Systemd service installed and enabled"
 }
@@ -189,7 +189,7 @@ test_installation() {
     log "INFO" "Testing installation..."
     
     # Test script execution
-    if "$INSTALL_DIR/onp.sh" --help &> /dev/null || [ $? -eq 1 ]; then
+    if "$INSTALL_DIR/netnoise.sh" --help &> /dev/null || [ $? -eq 1 ]; then
         log "SUCCESS" "Script execution test passed"
     else
         log "ERROR" "Script execution test failed"
@@ -197,7 +197,7 @@ test_installation() {
     fi
     
     # Test systemd service
-    if systemctl is-enabled onp.timer &> /dev/null; then
+    if systemctl is-enabled netnoise.timer &> /dev/null; then
         log "SUCCESS" "Systemd timer is enabled"
     else
         log "ERROR" "Systemd timer is not enabled"
@@ -209,8 +209,8 @@ test_installation() {
 regenerate_timer() {
     log "INFO" "Regenerating timer based on current configuration..."
     
-    if [ ! -f "$INSTALL_DIR/onp.conf" ]; then
-        log "ERROR" "Configuration file not found: $INSTALL_DIR/onp.conf"
+    if [ ! -f "$INSTALL_DIR/netnoise.conf" ]; then
+        log "ERROR" "Configuration file not found: $INSTALL_DIR/netnoise.conf"
         exit 1
     fi
     
@@ -221,8 +221,8 @@ regenerate_timer() {
     systemctl daemon-reload
     
     # Restart timer if it's running
-    if systemctl is-active onp.timer &> /dev/null; then
-        systemctl restart onp.timer
+    if systemctl is-active netnoise.timer &> /dev/null; then
+        systemctl restart netnoise.timer
         log "SUCCESS" "Timer regenerated and restarted"
     else
         log "SUCCESS" "Timer regenerated (not running)"
@@ -231,32 +231,32 @@ regenerate_timer() {
 
 # Check installed configuration
 check_installed_config() {
-    log "INFO" "Validating installed OpenNetProbe configuration..."
+    log "INFO" "Validating installed netnoise configuration..."
     
-    if [ ! -f "$INSTALL_DIR/onp.conf" ]; then
-        log "ERROR" "Configuration file not found: $INSTALL_DIR/onp.conf"
+    if [ ! -f "$INSTALL_DIR/netnoise.conf" ]; then
+        log "ERROR" "Configuration file not found: $INSTALL_DIR/netnoise.conf"
         exit 1
     fi
     
-    if [ ! -f "$INSTALL_DIR/onp.sh" ]; then
-        log "ERROR" "Main script not found: $INSTALL_DIR/onp.sh"
+    if [ ! -f "$INSTALL_DIR/netnoise.sh" ]; then
+        log "ERROR" "Main script not found: $INSTALL_DIR/netnoise.sh"
         exit 1
     fi
     
     # Test configuration validation
-    if ! "$INSTALL_DIR/onp.sh" --check; then
+    if ! "$INSTALL_DIR/netnoise.sh" --check; then
         log "ERROR" "Configuration validation failed"
         exit 1
     fi
     
     # Check systemd service status
-    if systemctl is-enabled onp.timer &> /dev/null; then
+    if systemctl is-enabled netnoise.timer &> /dev/null; then
         log "SUCCESS" "Systemd timer is enabled"
     else
         log "WARN" "Systemd timer is not enabled"
     fi
     
-    if systemctl is-active onp.timer &> /dev/null; then
+    if systemctl is-active netnoise.timer &> /dev/null; then
         log "SUCCESS" "Systemd timer is active"
     else
         log "INFO" "Systemd timer is not active (this is normal if not started)"
@@ -269,44 +269,44 @@ check_installed_config() {
 show_status() {
     log "INFO" "Installation completed successfully!"
     echo
-    echo "=== OpenNetProbe (ONP) Status ==="
+    echo "=== NetNoise Status ==="
     echo "Installation directory: $INSTALL_DIR"
-    echo "Configuration file: $INSTALL_DIR/onp.conf"
+    echo "Configuration file: $INSTALL_DIR/netnoise.conf"
     echo "Log directory: $INSTALL_DIR/logs"
     echo "Results directory: $INSTALL_DIR/results"
     echo
     echo "=== Service Status ==="
-    systemctl status onp.timer --no-pager
+    systemctl status netnoise.timer --no-pager
     echo
     echo "=== Next Steps ==="
-    echo "1. Edit configuration: sudo nano $INSTALL_DIR/onp.conf"
+    echo "1. Edit configuration: sudo nano $INSTALL_DIR/netnoise.conf"
     echo "2. Regenerate timer: sudo $0 regenerate"
-    echo "3. Start monitoring: sudo systemctl start onp.timer"
-    echo "4. Check status: sudo systemctl status onp.timer"
-    echo "5. View logs: sudo journalctl -u onp.service -f"
-    echo "6. Test manually: sudo $INSTALL_DIR/onp.sh"
+    echo "3. Start monitoring: sudo systemctl start netnoise.timer"
+    echo "4. Check status: sudo systemctl status netnoise.timer"
+    echo "5. View logs: sudo journalctl -u netnoise.service -f"
+    echo "6. Test manually: sudo $INSTALL_DIR/netnoise.sh"
     echo
     echo "=== Useful Commands ==="
-    echo "Start timer:     sudo systemctl start onp.timer"
-    echo "Stop timer:      sudo systemctl stop onp.timer"
-    echo "Restart timer:   sudo systemctl restart onp.timer"
+    echo "Start timer:     sudo systemctl start netnoise.timer"
+    echo "Stop timer:      sudo systemctl stop netnoise.timer"
+    echo "Restart timer:   sudo systemctl restart netnoise.timer"
     echo "Regenerate:      sudo $0 regenerate"
-    echo "View logs:       sudo journalctl -u onp.service"
-    echo "Test run:        sudo $INSTALL_DIR/onp.sh"
-    echo "Edit config:     sudo nano $INSTALL_DIR/onp.conf"
+    echo "View logs:       sudo journalctl -u netnoise.service"
+    echo "Test run:        sudo $INSTALL_DIR/netnoise.sh"
+    echo "Edit config:     sudo nano $INSTALL_DIR/netnoise.conf"
 }
 
 # Uninstall function
 uninstall() {
-    log "INFO" "Uninstalling OpenNetProbe (ONP)..."
+    log "INFO" "Uninstalling NetNoise..."
     
     # Stop and disable services
-    systemctl stop onp.timer 2>/dev/null || true
-    systemctl disable onp.timer 2>/dev/null || true
+    systemctl stop netnoise.timer 2>/dev/null || true
+    systemctl disable netnoise.timer 2>/dev/null || true
     
     # Remove systemd files
-    rm -f /etc/systemd/system/onp.service
-    rm -f /etc/systemd/system/onp.timer
+    rm -f /etc/systemd/system/netnoise.service
+    rm -f /etc/systemd/system/netnoise.timer
     
     # Reload systemd
     systemctl daemon-reload
@@ -316,20 +316,20 @@ uninstall() {
         rm -rf "$INSTALL_DIR"
     fi
     
-    log "SUCCESS" "OpenNetProbe uninstalled successfully"
+    log "SUCCESS" "netnoise uninstalled successfully"
 }
 
 # Show help information
 show_help() {
     cat << EOF
-OpenNetProbe (ONP) Installation Script v${VERSION}
+NetNoise Installation Script v${VERSION}
 
 USAGE:
     $0 [COMMAND] [OPTIONS]
 
 COMMANDS:
-    install                 Install OpenNetProbe (ONP) (default)
-    uninstall               Remove OpenNetProbe (ONP) completely
+    install                 Install NetNoise (default)
+    uninstall               Remove NetNoise completely
     regenerate              Regenerate timer based on current config
     check                   Check installed configuration
     help, -h, --help        Show this help message
@@ -339,20 +339,20 @@ OPTIONS:
     --force                 Force installation even if already installed
 
 EXAMPLES:
-    $0                      # Install OpenNetProbe (ONP)
+    $0                      # Install NetNoise
     $0 install --force      # Force installation
     $0 regenerate           # Regenerate timer after config changes
     $0 check                # Check current installation
-    $0 uninstall            # Remove OpenNetProbe (ONP)
+    $0 uninstall            # Remove NetNoise
 
-For more information, see: https://github.com/madebyjake/onp
+For more information, see: https://github.com/madebyjake/netnoise
 EOF
 }
 
 # Show version information
 show_version() {
     cat << EOF
-OpenNetProbe Installation Script v${VERSION}
+netnoise Installation Script v${VERSION}
 Build Date: ${BUILD_DATE}
 Git Commit: ${GIT_COMMIT}
 EOF
@@ -360,7 +360,7 @@ EOF
 
 # Main function
 main() {
-    echo "OpenNetProbe (ONP) Installation Script v${VERSION}"
+    echo "NetNoise Installation Script v${VERSION}"
     echo "=========================================="
     echo
     echo "⚠️  SECURITY REMINDER: This script requires root privileges."
