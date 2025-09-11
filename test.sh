@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# OpenNetProbe (ONP) Test Script
-# Tests the ONP installation and functionality
+# netnoise Test Script
+# Tests the netnoise installation and functionality
 
 set -euo pipefail
 
@@ -67,7 +67,7 @@ test_dependencies() {
 test_syntax() {
     log "INFO" "Testing script syntax..."
     
-    if bash -n ./onp.sh; then
+    if bash -n ./netnoise.sh; then
         log "SUCCESS" "Script syntax is valid"
         return 0
     else
@@ -80,11 +80,11 @@ test_syntax() {
 test_config() {
     log "INFO" "Testing configuration loading..."
     
-    if [ -f "./onp.conf" ]; then
+    if [ -f "./netnoise.conf" ]; then
         log "SUCCESS" "Configuration file exists"
         
         # Test sourcing the config
-        if source ./onp.conf 2>/dev/null; then
+        if source ./netnoise.conf 2>/dev/null; then
             log "SUCCESS" "Configuration file is valid"
             return 0
         else
@@ -130,18 +130,18 @@ test_http() {
 test_systemd() {
     log "INFO" "Testing systemd files..."
     
-    if [ -f "./onp.service" ] && [ -f "./onp.timer" ]; then
+    if [ -f "./netnoise.service" ] && [ -f "./netnoise.timer" ]; then
         log "SUCCESS" "Systemd files exist"
         
         # Test service file syntax
-        if (systemd-analyze verify ./onp.service &> /dev/null); then
+        if (systemd-analyze verify ./netnoise.service &> /dev/null); then
             log "SUCCESS" "Service file syntax is valid"
         else
             log "WARN" "Service file syntax issues (may need systemd context)"
         fi
         
         # Test timer file syntax
-        if (systemd-analyze verify ./onp.timer &> /dev/null); then
+        if (systemd-analyze verify ./netnoise.timer &> /dev/null); then
             log "SUCCESS" "Timer file syntax is valid"
         else
             log "WARN" "Timer file syntax issues (may need systemd context)"
@@ -156,7 +156,7 @@ test_systemd() {
 
 # Main test function
 main() {
-    echo "OpenNetProbe (ONP) Test Suite"
+    echo "NetNoise Test Suite"
     echo "============================="
     echo
     
@@ -262,16 +262,16 @@ main() {
     # Check if core tests passed (required for success)
     if [ $core_tests_passed -eq $core_tests_total ]; then
         if [ $network_tests_passed -eq $network_tests_total ]; then
-            log "SUCCESS" "All tests passed! OpenNetProbe (ONP) is ready to use."
+            log "SUCCESS" "All tests passed! NetNoise is ready to use."
         else
             log "WARN" "Core tests passed, but some network tests failed (may be expected in CI environments)."
-            log "SUCCESS" "OpenNetProbe (ONP) core functionality is ready to use."
+            log "SUCCESS" "NetNoise core functionality is ready to use."
         fi
         echo
         echo "Next steps:"
         echo "1. Run: sudo ./install.sh"
-        echo "2. Edit: sudo nano /opt/onp/onp.conf"
-        echo "3. Start: sudo systemctl start onp.timer"
+        echo "2. Edit: sudo nano /opt/netnoise/netnoise.conf"
+        echo "3. Start: sudo systemctl start netnoise.timer"
         exit 0
     else
         log "ERROR" "Core tests failed. Please fix issues before installation."
