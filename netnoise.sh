@@ -209,6 +209,16 @@ validate_config() {
         ((errors++))
     fi
     
+    if ! [[ "${PORT_SCAN_TIMEOUT:-5}" =~ ^[0-9]+$ ]] || [ "${PORT_SCAN_TIMEOUT:-5}" -lt 1 ] || [ "${PORT_SCAN_TIMEOUT:-5}" -gt 30 ]; then
+        log "ERROR" "PORT_SCAN_TIMEOUT must be a number between 1-30 (got: ${PORT_SCAN_TIMEOUT:-5})"
+        ((errors++))
+    fi
+    
+    if [[ "${PORT_SCAN_ENABLED:-false}" != "true" ]] && [[ "${PORT_SCAN_ENABLED:-false}" != "false" ]]; then
+        log "ERROR" "PORT_SCAN_ENABLED must be true or false (got: ${PORT_SCAN_ENABLED:-false})"
+        ((errors++))
+    fi
+    
     if ! [[ "${LOG_RETENTION_DAYS:-30}" =~ ^[0-9]+$ ]] || [ "${LOG_RETENTION_DAYS:-30}" -lt 1 ] || [ "${LOG_RETENTION_DAYS:-30}" -gt 3650 ]; then
         log "ERROR" "LOG_RETENTION_DAYS must be a number between 1-3650 (got: ${LOG_RETENTION_DAYS:-30})"
         ((errors++))
@@ -377,6 +387,11 @@ DNS_ENABLED=true
 BANDWIDTH_ENABLED=false
 BANDWIDTH_TIMEOUT=30
 BANDWIDTH_TEST_UPLOAD=false
+
+# Port scanning test settings
+PORT_SCAN_ENABLED=false
+PORT_SCAN_TIMEOUT=5
+PORT_SCAN_PORTS="22,80,443,25,53,110,143,993,995"
 
 # HTTP/HTTPS test settings
 HTTP_TIMEOUT=10
@@ -680,6 +695,120 @@ test_bandwidth() {
     fi
 }
 
+# Test port connectivity
+test_ports() {
+    local target="$1"
+    local result_file="$2"
+    
+    log "INFO" "Testing port connectivity to $target"
+    
+    # Extract hostname from URL if needed
+    local hostname="$target"
+    if [[ "$target" =~ ^https?:// ]]; then
+        hostname=$(echo "$target" | sed 's|^https\?://||' | cut -d'/' -f1)
+    fi
+    
+    # Validate hostname to prevent command injection
+    if [[ ! "$hostname" =~ ^[a-zA-Z0-9.-]+$ ]] || [[ "$hostname" =~ ^\. ]] || [[ "$hostname" =~ \.$ ]] || [[ "$hostname" =~ \.\. ]]; then
+        echo "  \"ports\": {\"status\": \"failed\", \"error\": \"invalid hostname format\"}" >> "$result_file"
+        log "ERROR" "Invalid hostname format: $hostname"
+        return 1
+    fi
+    
+    local ports_start_time=$(date +%s.%N)
+    local ports_json="  \"ports\": {\"status\": \"success\", \"time_ms\": \"0\", \"open_ports\": ["
+    local open_ports=()
+    local ports_error=""
+    local total_open=0
+    
+    # Parse PORT_SCAN_PORTS configuration
+    local ports_to_scan=()
+    if [ -n "${PORT_SCAN_PORTS:-}" ]; then
+        # Split comma-separated ports and validate
+        IFS=',' read -ra port_list <<< "$PORT_SCAN_PORTS"
+        for port in "${port_list[@]}"; do
+            port=$(echo "$port" | tr -d ' ')  # Remove whitespace
+            if [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; then
+                ports_to_scan+=("$port")
+            else
+                log "WARN" "Invalid port number: $port (skipping)"
+            fi
+        done
+    else
+        # Default ports if none specified
+        ports_to_scan=(22 80 443 25 53 110 143 993 995)
+    fi
+    
+    if [ ${#ports_to_scan[@]} -eq 0 ]; then
+        echo "  \"ports\": {\"status\": \"disabled\", \"message\": \"No valid ports configured for scanning\"}" >> "$result_file"
+        log "INFO" "No valid ports configured for scanning"
+        return 0
+    fi
+    
+    # Test each port
+    for port in "${ports_to_scan[@]}"; do
+        local port_open=false
+        local port_error=""
+        
+        # Try netcat first (preferred method)
+        if command -v nc &> /dev/null; then
+            if timeout "$PORT_SCAN_TIMEOUT" nc -z -w"$PORT_SCAN_TIMEOUT" "$hostname" "$port" 2>/dev/null; then
+                port_open=true
+            else
+                port_error="nc connection failed"
+            fi
+        # Fallback to /dev/tcp method
+        elif [ -c /dev/tcp ]; then
+            if timeout "$PORT_SCAN_TIMEOUT" bash -c "exec 3<>/dev/tcp/$hostname/$port" 2>/dev/null; then
+                port_open=true
+                exec 3<&- 2>/dev/null || true
+            else
+                port_error="tcp connection failed"
+            fi
+        else
+            port_error="No port scanning tools available (nc or /dev/tcp)"
+            break
+        fi
+        
+        if [ "$port_open" = true ]; then
+            open_ports+=("$port")
+            total_open=$((total_open + 1))
+            log "SUCCESS" "Port $port on $hostname is open"
+        else
+            log "DEBUG" "Port $port on $hostname is closed or filtered"
+        fi
+    done
+    
+    # Calculate total test time
+    local ports_end_time=$(date +%s.%N)
+    local test_duration=$(echo "($ports_end_time - $ports_start_time) * 1000" | bc -l 2>/dev/null | cut -d. -f1 || echo "0")
+    
+    # Prepare results
+    if [ -n "$port_error" ] && [ ${#open_ports[@]} -eq 0 ]; then
+        echo "  \"ports\": {\"status\": \"failed\", \"time_ms\": \"$test_duration\", \"error\": \"$port_error\"}" >> "$result_file"
+        log "ERROR" "Port scanning failed: $port_error"
+        return 1
+    else
+        # Build JSON array of open ports
+        local ports_array=""
+        for i in "${!open_ports[@]}"; do
+            if [ $i -gt 0 ]; then
+                ports_array="$ports_array, "
+            fi
+            ports_array="$ports_array${open_ports[$i]}"
+        done
+        
+        echo "  \"ports\": {\"status\": \"success\", \"time_ms\": \"$test_duration\", \"open_ports\": [$ports_array], \"total_open\": $total_open, \"total_scanned\": ${#ports_to_scan[@]}}" >> "$result_file"
+        
+        if [ $total_open -gt 0 ]; then
+            log "SUCCESS" "Port scanning completed - $total_open/${#ports_to_scan[@]} ports open: ${open_ports[*]}"
+        else
+            log "INFO" "Port scanning completed - 0/${#ports_to_scan[@]} ports open"
+        fi
+        return 0
+    fi
+}
+
 # Test HTTP/HTTPS connectivity
 test_http() {
     local target="$1"
@@ -849,6 +978,16 @@ test_target() {
         log "INFO" "Bandwidth testing disabled for $target"
     fi
     
+    # Test port scanning (if enabled)
+    local ports_result=0  # Default to success when disabled
+    if [ "${PORT_SCAN_ENABLED:-false}" = "true" ]; then
+        test_ports "$target" "$result_file"
+        ports_result=$?
+    else
+        echo "  \"ports\": {\"status\": \"disabled\", \"message\": \"Port scanning disabled in configuration\"}" >> "$result_file"
+        log "INFO" "Port scanning disabled for $target"
+    fi
+    
     # Test HTTP
     test_http "$target" "$result_file"
     local http_result=$?
@@ -898,7 +1037,7 @@ test_target() {
     rm -f "$result_file"
     
     # Return overall result
-    if [ $dns_result -eq 0 ] || [ $ping_result -eq 0 ] || [ $bandwidth_result -eq 0 ] || [ $http_result -eq 0 ]; then
+    if [ $dns_result -eq 0 ] || [ $ping_result -eq 0 ] || [ $bandwidth_result -eq 0 ] || [ $ports_result -eq 0 ] || [ $http_result -eq 0 ]; then
         log "SUCCESS" "Target $target is reachable"
         return 0
     else
