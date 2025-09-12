@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Version information
-VERSION="$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo 'unknown')"
+VERSION="$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' | sed 's/-.*$//' || echo 'unknown')"
 BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 
