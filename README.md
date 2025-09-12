@@ -1,5 +1,11 @@
 # NetNoise
 
+[![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](https://www.linux.org/)
+[![Bash](https://img.shields.io/badge/Bash-4EAA25?logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
+[![Make](https://img.shields.io/badge/Make-427819?logo=gnu&logoColor=white)](https://www.gnu.org/software/make/)
+[![License](https://img.shields.io/badge/License-MIT-yellow?logo=open-source-initiative&logoColor=white)](LICENSE)
+[![Test](https://github.com/madebyjake/netnoise/actions/workflows/test.yml/badge.svg)](https://github.com/madebyjake/netnoise/actions/workflows/test.yml)
+
 NetNoise is a network monitoring and troubleshooting utility that performs connectivity testing across multiple protocols. It provides automated testing of DNS resolution, ping, traceroute, HTTP/HTTPS connectivity, bandwidth analysis, port scanning, and MTU discovery against configurable targets for network diagnostics and monitoring.
 
 ## Features
