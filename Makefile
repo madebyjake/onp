@@ -1,7 +1,7 @@
 # netnoise Makefile
 # Provides commands for managing netnoise
 
-.PHONY: help install uninstall upgrade test clean status start stop restart logs regenerate check health version config manual info lint format validate deps setup dev
+.PHONY: help install install-dev uninstall upgrade upgrade-dev test clean status start stop restart logs regenerate check health version config manual info lint format validate deps setup dev
 
 # Default target
 help:
@@ -10,8 +10,10 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  install     - Install netnoise systemd service"
+	@echo "  install-dev - Install netnoise for development (local, no systemd)"
 	@echo "  uninstall   - Remove netnoise completely"
 	@echo "  upgrade     - Upgrade netnoise to latest version"
+	@echo "  upgrade-dev - Upgrade netnoise for development"
 	@echo "  test        - Run test suite"
 	@echo "  clean       - Clean up logs and results"
 	@echo "  status      - Show service status"
@@ -39,6 +41,21 @@ install:
 	@echo "Installing netnoise..."
 	sudo ./install.sh
 
+# Install netnoise for development (local, no systemd)
+install-dev:
+	@echo "Installing netnoise for development..."
+	@echo "Setting up development environment..."
+	@mkdir -p logs results packet_loss
+	@chmod +x netnoise.sh install.sh test.sh
+	@chmod +x modules/*.sh 2>/dev/null || true
+	@echo "Creating development configuration..."
+	@if [ ! -f "netnoise.conf" ]; then \
+		echo "Configuration file not found. Please create netnoise.conf first."; \
+		exit 1; \
+	fi
+	@echo "Development installation completed!"
+	@echo "Run 'make dev' to test locally or './netnoise.sh' to run manually."
+
 # Uninstall netnoise
 uninstall:
 	@echo "Uninstalling netnoise..."
@@ -53,7 +70,8 @@ upgrade:
 	@echo "Backing up current configuration..."
 	@sudo cp /opt/netnoise/netnoise.conf /opt/netnoise/netnoise.conf.backup 2>/dev/null || true
 	@echo "Pulling latest changes..."
-	@git pull origin main
+	@git fetch origin
+	@git merge origin/$$(git branch --show-current) --ff-only || (echo "Warning: Could not fast-forward merge. Use 'git status' to check for conflicts." && exit 1)
 	@echo "Reinstalling netnoise..."
 	@sudo ./install.sh
 	@echo "Restoring configuration..."
@@ -62,6 +80,22 @@ upgrade:
 	@sudo systemctl start netnoise.timer
 	@echo "Upgrade completed successfully!"
 	@echo "Run 'make status' to verify everything is working."
+
+# Upgrade netnoise for development
+upgrade-dev:
+	@echo "Upgrading netnoise for development..."
+	@echo "Pulling latest changes..."
+	@git fetch origin
+	@git merge origin/$$(git branch --show-current) --ff-only || (echo "Warning: Could not fast-forward merge. Use 'git status' to check for conflicts." && exit 1)
+	@echo "Setting up development environment..."
+	@mkdir -p logs results packet_loss
+	@chmod +x netnoise.sh install.sh test.sh
+	@chmod +x modules/*.sh 2>/dev/null || true
+	@echo "Running development validation..."
+	@make format
+	@make validate
+	@echo "Development upgrade completed!"
+	@echo "Run 'make dev' to test locally or './netnoise.sh' to run manually."
 
 # Run test suite
 test:
