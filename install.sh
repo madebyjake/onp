@@ -85,6 +85,8 @@ check_requirements() {
             yum install -y "${missing_tools[@]}"
         elif command -v dnf &> /dev/null; then
             dnf install -y "${missing_tools[@]}"
+        elif command -v zypper &> /dev/null; then
+            zypper install -y "${missing_tools[@]}"
         elif command -v pacman &> /dev/null; then
             pacman -S --noconfirm "${missing_tools[@]}"
         elif command -v brew &> /dev/null; then
